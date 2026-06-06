@@ -25,6 +25,20 @@ services:
     depends_on:
       - db
 
+  logger:
+    build: ./services/logger
+    container_name: crm_logger_service
+    restart: always
+    volumes:
+      - ./services/logger:/app
+    ports:
+      - "8001:8001"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   frontend:
     build: ./frontend
     container_name: crm_frontend_react
