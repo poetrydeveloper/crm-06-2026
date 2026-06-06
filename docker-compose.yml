@@ -39,6 +39,24 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  analyzer:
+    build: ./services/analyzer
+    container_name: crm_analyzer_service
+    restart: always
+    volumes:
+      - ./services/analyzer:/app
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+    depends_on:
+      - db
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   frontend:
     build: ./frontend
     container_name: crm_frontend_react
