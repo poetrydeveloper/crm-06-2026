@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -13,6 +11,19 @@ services:
       - crm_pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+
+  backend:
+    build: ./services/core
+    container_name: crm_backend_core
+    restart: always
+    volumes:
+      - ./services/core:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+    depends_on:
+      - db
 
 volumes:
   crm_pg_data:
