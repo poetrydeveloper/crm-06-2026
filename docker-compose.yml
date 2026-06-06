@@ -25,5 +25,22 @@ services:
     depends_on:
       - db
 
+  frontend:
+    build: ./frontend
+    container_name: crm_frontend_react
+    restart: always
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Защищает локальную папку от перезаписи
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
 volumes:
   crm_pg_data:
