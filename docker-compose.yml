@@ -30,7 +30,7 @@ services:
     volumes:
       - ./services/logger:/app
     ports:
-      - "8001:8001" # Оставляем для удобства отладки
+      - "8001:8001"
     deploy:
       resources:
         limits:
@@ -80,6 +80,26 @@ services:
       - frontend
       - backend
       - analyzer
+
+  # 🛡️ АВТОНОМНЫЙ КОНТЕЙНЕР БЭКАПОВ (ИНКРЕМЕНТАЛЬНЫЕ ПАЗЛЫ)
+  backup:
+    image: prodrigestivill/postgres-backup-local:16-alpine
+    container_name: crm_backup_service
+    restart: always
+    user: "postgres:postgres"
+    volumes:
+      - ./infra/backups:/backups
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=crm_main_database
+      - POSTGRES_USER=crm_admin
+      - POSTGRES_PASSWORD=crm_secure_password
+      - POSTGRES_EXTRA_OPTS=-Z 9 --schema=public # Максимальный уровень сжатия gzip
+      - BACKUP_NUM_KEEP=30                        # Хранить историю за последние 30 дней
+      - BACKUP_FREQUENCY=daily                    # Автозапуск раз в день (резервный триггер)
+      - BACKUP_TIME=2355                          # Основной запуск в 23:55 при закрытии дня
+    depends_on:
+      - db
 
 volumes:
   crm_pg_data:
