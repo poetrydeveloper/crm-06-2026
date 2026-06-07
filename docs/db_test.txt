@@ -1,0 +1,4 @@
+https://www.youtube.com/shorts/RAWnfGBOStQ?feature=share
+
+
+Движок (System): PostgreSQLСервер (Server): db (это имя контейнера базы данных в сети Docker)Пользователь (User): crm_adminПароль (Password): crm_secure_passwordБаза данных (Database): crm_main_database
