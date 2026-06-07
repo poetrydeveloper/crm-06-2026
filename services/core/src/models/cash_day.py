@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import List
 from decimal import Decimal
-from sqlalchemy import Integer, Decimal as Numeric, Boolean, DateTime
+from sqlalchemy import Integer , Numeric, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 

@@ -1,7 +1,7 @@
 # services/core/src/models/cash_event_item.py
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Integer, Decimal as Numeric, DateTime, ForeignKey
+from sqlalchemy import Integer , Numeric, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 

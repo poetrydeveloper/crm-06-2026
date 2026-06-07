@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 from typing import List, Optional
 from decimal import Decimal
-from sqlalchemy import String, Integer, Decimal as Numeric, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
