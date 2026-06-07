@@ -101,5 +101,15 @@ services:
     depends_on:
       - db
 
+  # 📊 Визуальный веб-интерфейс для просмотра таблиц БД
+  adminer:
+    image: adminer:latest
+    container_name: crm_db_manager
+    restart: always
+    ports:
+      - "8080:8080" # Открываем порт 8080 для браузера
+    depends_on:
+      - db
+      
 volumes:
   crm_pg_data:

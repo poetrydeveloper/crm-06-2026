@@ -143,3 +143,34 @@ async def teach_search_alias(product_id: int, alias: str = Query(...), db: Async
         product.search_aliases = current_aliases # Перезаписываем JSON-поле в Postgres
         
     return {"status": "success", "message": f"Товар обучен слову '{clean_alias}'"}
+
+@router.get("/brands", response_model=List[dict])
+async def get_brands(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Brand))
+    return [{"id": b.id, "name": b.name, "description": b.description} for b in result.scalars().all()]
+
+@router.get("/categories", response_model=List[dict])
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Category))
+    return [{"id": c.id, "name": c.name, "parent_id": c.parent_id} for c in result.scalars().all()]
+
+@router.get("/products/all", response_model=List[dict])
+async def get_all_products(db: AsyncSession = Depends(get_db)):
+    stmt = select(Product, Brand.name.label("brand_name"), Category.name.label("category_name")).\
+        outerjoin(Brand, Product.brand_id == Brand.id).\
+        join(Category, Product.category_id == Category.id)
+    result = await db.execute(stmt)
+    
+    products = []
+    for row in result.all():
+        prod = row[0]
+        products.append({
+            "id": prod.id,
+            "code": prod.code,
+            "name": prod.name,
+            "brand_name": row.brand_name or "Без бренда",
+            "category_name": row.category_name,
+            "recommended_retail_price": float(prod.recommended_retail_price or 0),
+            "search_tags": prod.search_tags
+        })
+    return products
