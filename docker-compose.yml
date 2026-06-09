@@ -110,6 +110,25 @@ services:
       - "8080:8080" # Открываем порт 8080 для браузера
     depends_on:
       - db
-      
+  
+  qa_orchestrator:
+    build: ./services/qa_orchestrator
+    container_name: crm_qa_orchestrator
+    restart: always
+    volumes:
+      - ./services/qa_orchestrator:/app
+    ports:
+      - "8005:8005"  # <--- ДОБАВЬ ЭТИ ДВЕ СТРОКИ СЮДА
+    environment:
+      - GATEWAY_URL=http://gateway:80
+      - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+    depends_on:
+      - gateway
+      - db
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 volumes:
   crm_pg_data:

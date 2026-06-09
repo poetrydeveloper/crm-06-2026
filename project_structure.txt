@@ -1,41 +1,63 @@
 .
-./docker-compose.yml
-./frontend
-./frontend/Dockerfile
-./frontend/eslint.config.js
-./frontend/index.html
-./frontend/package.json
-./frontend/public
-./frontend/public/favicon.svg
-./frontend/public/icons.svg
-./frontend/README.md
-./frontend/src
-./frontend/src/App.css
-./frontend/src/App.tsx
-./frontend/src/assets
-./frontend/src/assets/hero.png
-./frontend/src/assets/react.svg
-./frontend/src/assets/vite.svg
-./frontend/src/index.css
-./frontend/src/main.tsx
-./frontend/tsconfig.app.json
-./frontend/tsconfig.json
-./frontend/tsconfig.node.json
-./frontend/vite.config.ts
-./nginx
-./nginx/nginx.conf
-./project_structure.txt
-./README.md
-./services
-./services/analyzer
-./services/analyzer/Dockerfile
-./services/analyzer/main.py
-./services/analyzer/requirements.txt
-./services/core
-./services/core/Dockerfile
-./services/core/main.py
-./services/core/requirements.txt
-./services/logger
-./services/logger/dockerfile
-./services/logger/main.py
-./services/logger/requirements.txt
+|____docker-compose.yml
+|____docs
+| |____~$О МЫ СДЕЛАЛИ.docx
+| |____db_test.txt
+| |____Генеральный план разработки Lightweight CRM.docx
+| |____ФУНКЦИОНАЛЬНЫЙ ЧЕРНОВИК.docx
+| |____ЧТО МЫ СДЕЛАЛИ.docx
+|____frontend
+| |____Dockerfile
+| |____eslint.config.js
+| |____index.html
+| |____package.json
+| |____public
+| | |____favicon.svg
+| | |____icons.svg
+| |____README.md
+| |____src
+| | |____App.css
+| | |____App.tsx
+| | |____assets
+| | | |____hero.png
+| | | |____react.svg
+| | | |____vite.svg
+| | |____index.css
+| | |____main.tsx
+| |____tsconfig.app.json
+| |____tsconfig.json
+| |____tsconfig.node.json
+| |____vite.config.ts
+|____infra
+| |____backups
+|____nginx
+| |____nginx.conf
+| |____README.md
+|____project_structure.txt
+|____README.md
+|____services
+| |____analyzer
+| | |____Dockerfile
+| | |____main.py
+| | |____README.md
+| | |____requirements.txt
+| |____core
+| | |____alembic.ini
+| | |____Dockerfile
+| | |____main.py
+| | |____migrations
+| | | |____README
+| | | |____script.py.mako
+| | | |____versions
+| | |____README.md
+| | |____requirements.txt
+| | |____src
+| | | |____database.py
+| | | |____models
+| | | |____routers
+| | | |____schemas
+| |____logger
+| | |____dockerfile
+| | |____main.py
+| | |____README.md
+| | |____requirements.txt
