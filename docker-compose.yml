@@ -118,7 +118,7 @@ services:
     volumes:
       - ./services/qa_orchestrator:/app
     ports:
-      - "8005:8005"  # <--- ДОБАВЬ ЭТИ ДВЕ СТРОКИ СЮДА
+      - "8005:8005"
     environment:
       - GATEWAY_URL=http://gateway:80
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database

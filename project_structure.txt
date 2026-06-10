@@ -1,63 +1,128 @@
 .
-|____docker-compose.yml
-|____docs
-| |____~$О МЫ СДЕЛАЛИ.docx
-| |____db_test.txt
-| |____Генеральный план разработки Lightweight CRM.docx
-| |____ФУНКЦИОНАЛЬНЫЙ ЧЕРНОВИК.docx
-| |____ЧТО МЫ СДЕЛАЛИ.docx
-|____frontend
-| |____Dockerfile
-| |____eslint.config.js
-| |____index.html
-| |____package.json
-| |____public
-| | |____favicon.svg
-| | |____icons.svg
-| |____README.md
-| |____src
-| | |____App.css
-| | |____App.tsx
-| | |____assets
-| | | |____hero.png
-| | | |____react.svg
-| | | |____vite.svg
-| | |____index.css
-| | |____main.tsx
-| |____tsconfig.app.json
-| |____tsconfig.json
-| |____tsconfig.node.json
-| |____vite.config.ts
-|____infra
-| |____backups
-|____nginx
-| |____nginx.conf
-| |____README.md
-|____project_structure.txt
-|____README.md
-|____services
-| |____analyzer
-| | |____Dockerfile
-| | |____main.py
-| | |____README.md
-| | |____requirements.txt
-| |____core
-| | |____alembic.ini
-| | |____Dockerfile
-| | |____main.py
-| | |____migrations
-| | | |____README
-| | | |____script.py.mako
-| | | |____versions
-| | |____README.md
-| | |____requirements.txt
-| | |____src
-| | | |____database.py
-| | | |____models
-| | | |____routers
-| | | |____schemas
-| |____logger
-| | |____dockerfile
-| | |____main.py
-| | |____README.md
-| | |____requirements.txt
+./core_models_review.txt
+./docker-compose.yml
+./docs
+./docs/db_test.txt
+./docs/Архитектура нового тестового микросервиса.docx
+./docs/Генеральный план разработки Lightweight CRM.docx
+./docs/ФУНКЦИОНАЛЬНЫЙ ЧЕРНОВИК.docx
+./docs/ЦИФРОВОЙ ПАСПОРТ ПРОЕКТА.docx
+./docs/ЧТО МЫ СДЕЛАЛИ.docx
+./frontend
+./frontend/Dockerfile
+./frontend/eslint.config.js
+./frontend/index.html
+./frontend/package.json
+./frontend/public
+./frontend/public/favicon.svg
+./frontend/public/icons.svg
+./frontend/README.md
+./frontend/src
+./frontend/src/App.css
+./frontend/src/App.tsx
+./frontend/src/assets
+./frontend/src/assets/hero.png
+./frontend/src/assets/react.svg
+./frontend/src/assets/vite.svg
+./frontend/src/index.css
+./frontend/src/main.tsx
+./frontend/tsconfig.app.json
+./frontend/tsconfig.json
+./frontend/tsconfig.node.json
+./frontend/vite.config.ts
+./infra
+./infra/backups
+./nginx
+./nginx/nginx.conf
+./nginx/README.md
+./project_structure.txt
+./project_structure.txt~
+./README.md
+./services
+./services/analyzer
+./services/analyzer/Dockerfile
+./services/analyzer/main.py
+./services/analyzer/README.md
+./services/analyzer/requirements.txt
+./services/analyzer/__pycache__
+./services/analyzer/__pycache__/main.cpython-311.pyc
+./services/core
+./services/core/alembic.ini
+./services/core/Dockerfile
+./services/core/main.py
+./services/core/migrations
+./services/core/migrations/env.py
+./services/core/migrations/README
+./services/core/migrations/script.py.mako
+./services/core/migrations/versions
+./services/core/migrations/versions/88e326cdc777_init_warehouse_and_cash_tables.py
+./services/core/migrations/versions/__pycache__
+./services/core/migrations/versions/__pycache__/88e326cdc777_init_warehouse_and_cash_tables.cpython-311.pyc
+./services/core/migrations/__pycache__
+./services/core/migrations/__pycache__/env.cpython-311.pyc
+./services/core/README.md
+./services/core/requirements.txt
+./services/core/src
+./services/core/src/database.py
+./services/core/src/models
+./services/core/src/models/base.py
+./services/core/src/models/brand.py
+./services/core/src/models/cash_day.py
+./services/core/src/models/cash_event.py
+./services/core/src/models/cash_event_item.py
+./services/core/src/models/category.py
+./services/core/src/models/customer.py
+./services/core/src/models/pending_sale.py
+./services/core/src/models/product.py
+./services/core/src/models/product_unit.py
+./services/core/src/models/supplier.py
+./services/core/src/models/__init__.py
+./services/core/src/models/__pycache__
+./services/core/src/models/__pycache__/base.cpython-311.pyc
+./services/core/src/models/__pycache__/brand.cpython-311.pyc
+./services/core/src/models/__pycache__/cash_day.cpython-311.pyc
+./services/core/src/models/__pycache__/cash_event.cpython-311.pyc
+./services/core/src/models/__pycache__/cash_event_item.cpython-311.pyc
+./services/core/src/models/__pycache__/category.cpython-311.pyc
+./services/core/src/models/__pycache__/customer.cpython-311.pyc
+./services/core/src/models/__pycache__/pending_sale.cpython-311.pyc
+./services/core/src/models/__pycache__/product.cpython-311.pyc
+./services/core/src/models/__pycache__/product_unit.cpython-311.pyc
+./services/core/src/models/__pycache__/supplier.cpython-311.pyc
+./services/core/src/models/__pycache__/__init__.cpython-311.pyc
+./services/core/src/routers
+./services/core/src/routers/catalog.py
+./services/core/src/routers/warehouse.py
+./services/core/src/routers/__pycache__
+./services/core/src/routers/__pycache__/catalog.cpython-311.pyc
+./services/core/src/routers/__pycache__/warehouse.cpython-311.pyc
+./services/core/src/schemas
+./services/core/src/schemas/catalog.py
+./services/core/src/schemas/warehouse.py
+./services/core/src/schemas/__pycache__
+./services/core/src/schemas/__pycache__/catalog.cpython-311.pyc
+./services/core/src/schemas/__pycache__/warehouse.cpython-311.pyc
+./services/core/src/__pycache__
+./services/core/src/__pycache__/database.cpython-311.pyc
+./services/core/__pycache__
+./services/core/__pycache__/main.cpython-311.pyc
+./services/logger
+./services/logger/dockerfile
+./services/logger/main.py
+./services/logger/README.md
+./services/logger/requirements.txt
+./services/logger/__pycache__
+./services/logger/__pycache__/main.cpython-311.pyc
+./services/qa_orchestrator
+./services/qa_orchestrator/Dockerfile
+./services/qa_orchestrator/features
+./services/qa_orchestrator/features/catalog_flow.feature
+./services/qa_orchestrator/features/steps
+./services/qa_orchestrator/features/steps/catalog_steps.py
+./services/qa_orchestrator/features/steps/__pycache__
+./services/qa_orchestrator/features/steps/__pycache__/catalog_steps.cpython-311.pyc
+./services/qa_orchestrator/main.py
+./services/qa_orchestrator/readme_map.md
+./services/qa_orchestrator/requirements.txt
+./services/qa_orchestrator/__pycache__
+./services/qa_orchestrator/__pycache__/main.cpython-311.pyc

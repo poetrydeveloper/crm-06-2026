@@ -5,7 +5,7 @@ from decimal import Decimal
 
 class BrandCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Название бренда")
-    description: Optional[str] = Field(None, max_length=500)
+    description: Optional[str] = Field(None, max_length=500, description="Описание бренда")
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Название категории")
@@ -13,13 +13,14 @@ class CategoryCreate(BaseModel):
 
 class ProductCreate(BaseModel):
     category_id: int
-    brand_id: Optional[int] = None
+    brand_id: int = Field(..., description="ID бренда (Строго обязательно по ТЗ Истории 3)")
     code: str = Field(..., min_length=1, max_length=100, description="Артикул товара")
     name: str = Field(..., min_length=2, max_length=255, description="Официальное наименование")
-    description: Optional[str] = Field(None, max_length=1000)
-    recommended_retail_price: Optional[Decimal] = Field(None, ge=0, max_digits=10, decimal_places=2)
-    # Сюда можно сразу передать стартовые синонимы, если они есть (например: ["ск"])
-    search_aliases: Optional[List[str]] = Field(default_factory=list)
+    description: Optional[str] = Field(None, max_length=1000, description="Описание товара")
+    recommended_retail_price: Optional[Decimal] = Field(None, ge=0, max_digits=10, decimal_places=2, description="Рекомендуемая розница")
+    search_aliases: List[str] = Field(default_factory=list, description="Стартовые сленговые синонимы")
+    # Добавлено по Истории 3:
+    images: List[str] = Field(default_factory=list, description="Массив ссылок на изображения. Индекс 0 — обложка карточки.")
 
 class ProductResponse(BaseModel):
     id: int
@@ -28,7 +29,8 @@ class ProductResponse(BaseModel):
     recommended_retail_price: Optional[Decimal]
     search_tags: Optional[List[str]]
     search_aliases: Optional[List[str]]
-    available_qty: int = 0  # Сюда аналитика подставит количество IN_STORE
+    images: List[str] = Field(default_factory=list, description="Ссылки на изображения товара")
+    available_qty: int = 0  # Количество доступных единиц IN_STORE на складе
 
     class Config:
         from_attributes = True

@@ -9,140 +9,202 @@ from src.schemas.catalog import ProductCreate, ProductResponse, BrandCreate, Cat
 
 router = APIRouter(prefix="/catalog", tags=["Каталог и Умный Поиск"])
 
-# --- 1. ДОБАВЛЕНИЕ БРЕНДА ---
+def transform_to_snake_case(text: str) -> str:
+    """Трансформирует строку: нижний регистр, убирает лишние пробелы, заменяет пробелы на '_'"""
+    if not text:
+        return ""
+    return "_".join(text.lower().strip().split())
+
+# ==========================================
+# 🛑 ЧАСТЬ 1: УПРАВЛЕНИЕ БРЕНДАМИ (История 1)
+# ==========================================
+
 @router.post("/brands", status_code=status.HTTP_201_CREATED)
 async def create_brand(payload: BrandCreate, db: AsyncSession = Depends(get_db)):
-    # Проверяем уникальность имени
-    existing = await db.execute(select(Brand).where(Brand.name == payload.name))
+    transformed_name = transform_to_snake_case(payload.name)
+    existing = await db.execute(select(Brand).where(Brand.name == transformed_name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Бренд с таким именем уже существует")
     
-    new_brand = Brand(name=payload.name, description=payload.description)
+    new_brand = Brand(name=transformed_name, description=payload.description)
     db.add(new_brand)
-    return {"status": "success", "brand_id": new_brand.id}
+    await db.flush()
+    return {"status": "success", "brand_id": new_brand.id, "name": transformed_name}
 
-# --- 2. ДОБАВЛЕНИЕ КАТЕГОРИИ ---
+@router.put("/brands/{brand_id}")
+async def update_brand(brand_id: int, payload: BrandCreate, db: AsyncSession = Depends(get_db)):
+    brand = await db.get(Brand, brand_id)
+    if not brand:
+        raise HTTPException(status_code=404, detail="Бренд не найден")
+    
+    transformed_name = transform_to_snake_case(payload.name)
+    brand.name = transformed_name
+    brand.description = payload.description
+    await db.flush()
+    return {"status": "success", "message": "Бренд успешно обновлен"}
+
+@router.delete("/brands/{brand_id}")
+async def delete_brand(brand_id: int, db: AsyncSession = Depends(get_db)):
+    brand = await db.get(Brand, brand_id)
+    if not brand:
+        raise HTTPException(status_code=404, detail="Бренд не найден")
+    
+    linked_products = await db.execute(select(Product).where(Product.brand_id == brand_id).limit(1))
+    if linked_products.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Нельзя удалить бренд, к которому привязаны товары")
+    
+    await db.delete(brand)
+    await db.flush()
+    return {"status": "success", "message": "Бренд успешно удален"}
+
+# ==========================================
+# 🛑 ЧАСТЬ 2: УПРАВЛЕНИЕ КАТЕГОРИЯМИ (История 2)
+# ==========================================
+
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
 async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
+    transformed_name = transform_to_snake_case(payload.name)
+    existing = await db.execute(select(Category).where(Category.name == transformed_name))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
+
     if payload.parent_id:
         parent = await db.get(Category, payload.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Родительская категория не найдена")
             
-    new_category = Category(name=payload.name, parent_id=payload.parent_id)
+    new_category = Category(name=transformed_name, parent_id=payload.parent_id)
     db.add(new_category)
-    return {"status": "success", "category_id": new_category.id}
+    await db.flush()
+    return {"status": "success", "category_id": new_category.id, "name": transformed_name}
 
-# --- 3. СОЗДАНИЕ ТОВАРА С АВТО-ТЕГАМИ ---
+@router.put("/categories/{category_id}")
+async def update_category(category_id: int, payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
+    category = await db.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+    
+    category.name = transform_to_snake_case(payload.name)
+    if payload.parent_id:
+        category.parent_id = payload.parent_id
+    await db.flush()
+    return {"status": "success", "message": "Категория успешно обновлена"}
+
+@router.delete("/categories/{category_id}")
+async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
+    if category_id == 1:
+        raise HTTPException(status_code=400, detail="Нельзя удалить системную резервную категорию")
+
+    category = await db.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail="Категория не найдена")
+    
+    linked_products = await db.execute(select(Product).where(Product.category_id == category_id).limit(1))
+    if linked_products.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Нельзя удалить категорию, к которой привязаны товары")
+    
+    await db.delete(category)
+    await db.flush()
+    return {"status": "success", "message": "Категория успешно удалена"}
+
+# ==========================================
+# 🛑 ЧАСТЬ 3: УПРАВЛЕНИЕ ТОВАРАМИ И АНОМАЛИИ (История 3)
+# ==========================================
+
 @router.post("/products", status_code=status.HTTP_201_CREATED)
 async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)):
-    # 1. Проверяем артикул на уникальность
+    category = await db.get(Category, payload.category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail=f"Категория с ID {payload.category_id} не найдена")
+        
+    brand = await db.get(Brand, payload.brand_id)
+    if not brand:
+        raise HTTPException(status_code=404, detail=f"Бренд с ID {payload.brand_id} не найден")
+
     existing = await db.execute(select(Product).where(Product.code == payload.code))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Товар с таким артикулом уже зарегистрирован")
 
-    # 2. АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ ТЕГОВ (Алгоритм из ТЗ)
-    # Очищаем имя, переводим в нижний регистр и бьем на слова
     clean_name = payload.name.lower().replace(",", " ").replace(".", " ").replace("-", " ")
-    tags = [word for word in clean_name.split() if len(word) > 1] # Игнорируем предлоги из 1 буквы
-    
-    # Добавляем артикул в теги для надежности
+    tags = [word for word in clean_name.split() if len(word) > 1]
     tags.append(payload.code.lower())
+    tags.append(brand.name)
 
-    # Подтягиваем текстовое имя бренда, если он указан, для добавления в теги
-    if payload.brand_id:
-        brand_obj = await db.get(Brand, payload.brand_id)
-        if brand_obj:
-            tags.append(brand_obj.name.lower())
-
-    # 3. Сохраняем карточку в базу
     new_product = Product(
         category_id=payload.category_id,
         brand_id=payload.brand_id,
         code=payload.code,
-        name=payload.name,
+        name=transform_to_snake_case(payload.name),
         description=payload.description,
         recommended_retail_price=payload.recommended_retail_price,
-        search_tags=tags,                                   # Записываем авто-теги
-        search_aliases=[a.lower() for a in payload.search_aliases]  # Записываем синонимы
+        images=payload.images,
+        search_tags=tags,
+        search_aliases=[a.lower().strip() for a in payload.search_aliases]
     )
     db.add(new_product)
-    await db.flush() # Получаем id новой карточки до коммита
+    await db.flush()
     return {"status": "success", "product_id": new_product.id, "generated_tags": tags}
 
-# --- 4. УМНЫЙ ПОИСК ДЛЯ КАССЫ С ПОДСЧЕТОМ ОСТАТКОВ (JOIN + COUNT) ---
-@router.get("/search", response_model=List[ProductResponse])
-async def smart_search(
-    q: str = Query(..., min_length=2, description="Поисковый запрос кассира"),
-    db: AsyncSession = Depends(get_db)
-):
-    query_word = q.lower().strip()
+@router.put("/products/{product_id}")
+async def update_product(product_id: int, payload: ProductCreate, db: AsyncSession = Depends(get_db)):
+    product = await db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Товар не найден")
     
-    # Подготавливаем JSON-запрос для поиска внутри массивов PostgreSQL JSONB
-    # В Postgres конструкция search_tags @> '"слово"' проверяет наличие элемента в массиве
-    json_search_pattern = f'"{query_word}"'
-
-    # Строим сложный асинхронный SQL-запрос с подсчетом доступных остатков FIFO
-    stmt = (
-        select(
-            Product,
-            func.count(ProductUnit.id).filter(
-                ProductUnit.physical_status == PhysicalStatus.IN_STORE,
-                ProductUnit.is_reserved == False
-            ).label("available_qty")
-        )
-        .outerjoin(ProductUnit, Product.id == ProductUnit.product_id)
-        # Умная фильтрация: по началу имени, по артикулу, внутри авто-тегов или синонимов
-        .where(
-            or_(
-                Product.name.ilike(f"%{query_word}%"),
-                Product.code.ilike(f"{query_word}%"),
-                func.jsonb_contains(Product.search_tags, func.cast(json_search_pattern, func.JSON)),
-                func.jsonb_contains(Product.search_aliases, func.cast(json_search_pattern, func.JSON))
-            )
-        )
-        .group_by(Product.id)
-        .limit(15) # Ограничиваем выдачу, чтобы касса "летала"
-    )
-
-    result = await db.execute(stmt)
-    
-    products_list = []
-    for row in result.all():
-        product_obj = row[0]
-        qty = row[1]
+    linked_units = await db.execute(select(ProductUnit).where(ProductUnit.product_id == product_id).limit(1))
+    if linked_units.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Нельзя редактировать товар с созданными единицами на складе")
         
-        # Маппим данные в нашу красивую Pydantic-схему для фронтенда
-        products_list.append(
-            ProductResponse(
-                id=product_obj.id,
-                code=product_obj.code,
-                name=product_obj.name,
-                recommended_retail_price=product_obj.recommended_retail_price,
-                search_tags=product_obj.search_tags,
-                search_aliases=product_obj.search_aliases,
-                available_qty=qty
-            )
-        )
-        
-    return products_list
+    product.category_id = payload.category_id
+    product.brand_id = payload.brand_id
+    product.code = payload.code
+    product.name = transform_to_snake_case(payload.name)
+    product.description = payload.description
+    product.recommended_retail_price = payload.recommended_retail_price
+    product.images = payload.images
+    await db.flush()
+    return {"status": "success", "message": "Карточка товара успешно изменена"}
 
-# --- 5. САМООБУЧЕНИЕ КАССЫ (ПРИВЯЗКА СЛЕНГОВОГО СИНОНИМА РУКАМИ) ---
-@router.patch("/products/{product_id}/learn")
-async def teach_search_alias(product_id: int, alias: str = Query(...), db: AsyncSession = Depends(get_db)):
+@router.delete("/products/{product_id}")
+async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
     product = await db.get(Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
         
-    clean_alias = alias.lower().strip()
-    
-    # Инициализируем список синонимов, если он пуст, и добавляем новое слово (например: "ск")
-    current_aliases = list(product.search_aliases) if product.search_aliases else []
-    if clean_alias not in current_aliases:
-        current_aliases.append(clean_alias)
-        product.search_aliases = current_aliases # Перезаписываем JSON-поле в Postgres
+    linked_units = await db.execute(select(ProductUnit).where(ProductUnit.product_id == product_id).limit(1))
+    if linked_units.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Нельзя удалить товар с созданными единицами на складе")
         
-    return {"status": "success", "message": f"Товар обучен слову '{clean_alias}'"}
+    await db.delete(product)
+    await db.flush()
+    return {"status": "success", "message": "Товар успешно удален"}
+
+@router.get("/products/anomalies")
+async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
+    stmt = select(Product).where(Product.category_id == 1)
+    result = await db.execute(stmt)
+    products = result.scalars().all()
+    return {
+        "has_anomalies": len(products) > 0,
+        "count": len(products),
+        "products": [{"id": p.id, "code": p.code, "name": p.name} for p in products]
+    }
+
+@router.get("/search", response_model=List[ProductResponse])
+async def smart_search(q: str = Query(..., min_length=2), db: AsyncSession = Depends(get_db)):
+    query_word = q.lower().strip()
+    json_search_pattern = f'"{query_word}"'
+    stmt = (
+        select(Product, func.count(ProductUnit.id).filter(ProductUnit.physical_status == PhysicalStatus.IN_STORE, ProductUnit.is_reserved == False).label("available_qty"))
+        .outerjoin(ProductUnit, Product.id == ProductUnit.product_id)
+        .where(or_(Product.name.ilike(f"%{query_word}%"), Product.code.ilike(f"{query_word}%"), func.jsonb_contains(Product.search_tags, func.cast(json_search_pattern, func.JSONB)), func.jsonb_contains(Product.search_aliases, func.cast(json_search_pattern, func.JSONB))))
+        .group_by(Product.id).limit(15)
+    )
+    result = await db.execute(stmt)
+    products_list = []
+    for row in result.all():
+        products_list.append(ProductResponse(id=row[0].id, code=row[0].code, name=row[0].name, recommended_retail_price=row[0].recommended_retail_price, search_tags=row[0].search_tags, search_aliases=row[0].search_aliases, images=row[0].images or [], available_qty=row[1]))
+    return products_list
 
 @router.get("/brands", response_model=List[dict])
 async def get_brands(db: AsyncSession = Depends(get_db)):
@@ -153,24 +215,3 @@ async def get_brands(db: AsyncSession = Depends(get_db)):
 async def get_categories(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Category))
     return [{"id": c.id, "name": c.name, "parent_id": c.parent_id} for c in result.scalars().all()]
-
-@router.get("/products/all", response_model=List[dict])
-async def get_all_products(db: AsyncSession = Depends(get_db)):
-    stmt = select(Product, Brand.name.label("brand_name"), Category.name.label("category_name")).\
-        outerjoin(Brand, Product.brand_id == Brand.id).\
-        join(Category, Product.category_id == Category.id)
-    result = await db.execute(stmt)
-    
-    products = []
-    for row in result.all():
-        prod = row[0]
-        products.append({
-            "id": prod.id,
-            "code": prod.code,
-            "name": prod.name,
-            "brand_name": row.brand_name or "Без бренда",
-            "category_name": row.category_name,
-            "recommended_retail_price": float(prod.recommended_retail_price or 0),
-            "search_tags": prod.search_tags
-        })
-    return products

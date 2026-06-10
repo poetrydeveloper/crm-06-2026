@@ -2,7 +2,9 @@
 from datetime import datetime
 from typing import List, Optional
 from decimal import Decimal
-from sqlalchemy import String, Integer, Numeric, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Integer, Numeric, DateTime, ForeignKey
+# Импортируем нативный JSONB из диалекта PostgreSQL
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
@@ -19,12 +21,17 @@ class Product(Base):
     description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     recommended_retail_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     
+    # --- БЛОК ИЗОБРАЖЕНИЙ ТОВАРА (Добавлено по Истории 3) ---
+    # Хранит массив ссылок. Индекс [0] — всегда главная карточка товара.
+    # Поддерживает как локальный файловый сервер, так и внешние S3-хранилища.
+    images: Mapped[Optional[list]] = mapped_column(JSONB, default=list, nullable=True)
+    
     # --- БЛОК УМНОГО И ОБУЧАЕМОГО ПОИСКА ---
     # Сюда авто-скрипт пишет ["ключ", "10мм", "toptul", "инструмент"]
-    search_tags: Mapped[Optional[list]] = mapped_column(JSON, default=list, nullable=True)
+    search_tags: Mapped[Optional[list]] = mapped_column(JSONB, default=list, nullable=True)
     
     # Сюда заносятся сленговые синонимы руками или при обучении: ["ск 911", "девятка", "разрезной"]
-    search_aliases: Mapped[Optional[list]] = mapped_column(JSON, default=list, nullable=True)
+    search_aliases: Mapped[Optional[list]] = mapped_column(JSONB, default=list, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
