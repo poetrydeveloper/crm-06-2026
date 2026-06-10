@@ -11,35 +11,29 @@ from src.database import get_db
 from src.models import Product, Supplier, ProductUnit, LogisticsStatus, PhysicalStatus
 from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse, OrderResponseItem
 
-# 1. ОБЯЗАТЕЛЬНО ОБЪЯВЛЯЕМ РОУТЕР
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
 
-# --- СХЕМЫ ВАЛИДАЦИИ ДЛЯ ПОСТАВЩИКОВ ---
 class SupplierCreate(BaseModel):
     name: str
     contact_info: Optional[str] = None
 
-# --- 1. ЭНДПОИНТ: СОЗДАНИЕ ПОСТАВЩИКА ---
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
-    # Проверяем уникальность имени поставщика
     existing = await db.execute(select(Supplier).where(Supplier.name == payload.name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Поставщик с таким именем уже существует")
 
     new_sup = Supplier(name=payload.name, contact_info=payload.contact_info)
     db.add(new_sup)
-    await db.flush() # Получаем ID до коммита
+    await db.flush()
+    await db.commit()
     return {"status": "success", "supplier_id": new_sup.id}
 
-# --- 2. ЭНДПОИНТ: ПОЛУЧЕНИЕ СПИСКА ПОСТАВЩИКОВ ---
 @router.get("/suppliers", response_model=List[dict])
 async def get_suppliers(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Supplier))
     return [{"id": s.id, "name": s.name, "contact_info": s.contact_info} for s in result.scalars().all()]
 
-
-# --- 3. КОМАНДА 0001: СОЗДАНИЕ ЗАЯВКИ ПОСТАВЩИКУ (АРМТЕК / ФОРСАЖ) ---
 @router.post("/orders", status_code=status.HTTP_201_CREATED, response_model=SupplierOrderResponse)
 async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession = Depends(get_db)):
     supplier = await db.get(Supplier, payload.supplier_id)
@@ -66,7 +60,7 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
                 unique_serial_number=unique_sn,
                 purchase_price=item.estimated_purchase_price,
                 logistics_status=LogisticsStatus.IN_REQUEST,
-                physical_status=PhysicalStatus.LOST, # Скрыт с полок, пока не приедет поставка
+                physical_status=PhysicalStatus.EXPECTED,
                 is_reserved=False
             )
             db.add(new_unit)
@@ -83,6 +77,7 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
         )
 
     await db.flush()
+    await db.commit() # ВНЕДРЕНО: Жесткая фиксация в БД, чтобы данные были видны роутеру удаления
     return SupplierOrderResponse(
         supplier_id=supplier.id,
         supplier_name=supplier.name,

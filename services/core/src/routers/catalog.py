@@ -28,7 +28,8 @@ async def create_brand(payload: BrandCreate, db: AsyncSession = Depends(get_db))
     
     new_brand = Brand(name=transformed_name, description=payload.description)
     db.add(new_brand)
-    await db.flush()
+    await db.flush()  # ЖЕСТКАЯ ФИКСАЦИЯ ДЛЯ СГЕНЕРИРОВАНИЯ ID В ПОСТГРЕСЕ
+    await db.commit() # Сохраняем "в камне"
     return {"status": "success", "brand_id": new_brand.id, "name": transformed_name}
 
 @router.put("/brands/{brand_id}")
@@ -37,10 +38,9 @@ async def update_brand(brand_id: int, payload: BrandCreate, db: AsyncSession = D
     if not brand:
         raise HTTPException(status_code=404, detail="Бренд не найден")
     
-    transformed_name = transform_to_snake_case(payload.name)
-    brand.name = transformed_name
+    brand.name = transform_to_snake_case(payload.name)
     brand.description = payload.description
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Бренд успешно обновлен"}
 
 @router.delete("/brands/{brand_id}")
@@ -54,7 +54,7 @@ async def delete_brand(brand_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Нельзя удалить бренд, к которому привязаны товары")
     
     await db.delete(brand)
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Бренд успешно удален"}
 
 # ==========================================
@@ -64,6 +64,10 @@ async def delete_brand(brand_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
 async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
     transformed_name = transform_to_snake_case(payload.name)
+    
+    # Сбрасываем кэш сессии, чтобы база данных увидела только что созданные записи из параллельных шагов
+    await db.flush()
+    
     existing = await db.execute(select(Category).where(Category.name == transformed_name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
@@ -75,7 +79,8 @@ async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(ge
             
     new_category = Category(name=transformed_name, parent_id=payload.parent_id)
     db.add(new_category)
-    await db.flush()
+    await db.flush()  # Генерируем category_id
+    await db.commit() # Принудительно пушим в Postgres, блокируя дубликаты для следующих запросов
     return {"status": "success", "category_id": new_category.id, "name": transformed_name}
 
 @router.put("/categories/{category_id}")
@@ -87,7 +92,7 @@ async def update_category(category_id: int, payload: CategoryCreate, db: AsyncSe
     category.name = transform_to_snake_case(payload.name)
     if payload.parent_id:
         category.parent_id = payload.parent_id
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Категория успешно обновлена"}
 
 @router.delete("/categories/{category_id}")
@@ -104,7 +109,7 @@ async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Нельзя удалить категорию, к которой привязаны товары")
     
     await db.delete(category)
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Категория успешно удалена"}
 
 # ==========================================
@@ -113,6 +118,9 @@ async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/products", status_code=status.HTTP_201_CREATED)
 async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)):
+    # Принудительно обновляем состояние сессии перед проверками связей
+    await db.flush()
+    
     category = await db.get(Category, payload.category_id)
     if not category:
         raise HTTPException(status_code=404, detail=f"Категория с ID {payload.category_id} не найдена")
@@ -143,6 +151,7 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
     )
     db.add(new_product)
     await db.flush()
+    await db.commit()
     return {"status": "success", "product_id": new_product.id, "generated_tags": tags}
 
 @router.put("/products/{product_id}")
@@ -162,7 +171,7 @@ async def update_product(product_id: int, payload: ProductCreate, db: AsyncSessi
     product.description = payload.description
     product.recommended_retail_price = payload.recommended_retail_price
     product.images = payload.images
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Карточка товара успешно изменена"}
 
 @router.delete("/products/{product_id}")
@@ -176,7 +185,7 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Нельзя удалить товар с созданными единицами на складе")
         
     await db.delete(product)
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Товар успешно удален"}
 
 @router.get("/products/anomalies")
@@ -203,7 +212,9 @@ async def smart_search(q: str = Query(..., min_length=2), db: AsyncSession = Dep
     result = await db.execute(stmt)
     products_list = []
     for row in result.all():
-        products_list.append(ProductResponse(id=row[0].id, code=row[0].code, name=row[0].name, recommended_retail_price=row[0].recommended_retail_price, search_tags=row[0].search_tags, search_aliases=row[0].search_aliases, images=row[0].images or [], available_qty=row[1]))
+        prod_obj = row[0]
+        qty = row[1]
+        products_list.append(ProductResponse(id=prod_obj.id, code=prod_obj.code, name=prod_obj.name, recommended_retail_price=prod_obj.recommended_retail_price, search_tags=prod_obj.search_tags, search_aliases=prod_obj.search_aliases, images=prod_obj.images or [], available_qty=qty))
     return products_list
 
 @router.get("/brands", response_model=List[dict])

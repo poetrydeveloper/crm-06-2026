@@ -1,67 +1,73 @@
 import os
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+import io
+from fastapi import FastAPI, Response
+from rich.console import Console
+from rich.table import Table
+
 from features.steps.catalog_steps import run_catalog_story_assertions
+from features.steps.brand_steps import run_brand_lifecycle_and_transformations
+from features.steps.category_steps import run_category_story_assertions
+from features.steps.product_steps import run_product_story_assertions
 
-app = FastAPI(
-    title="CRM QA Orchestrator",
-    description="Микросервис автоматического контроля бизнес-сценариев и регрессии",
-    version="1.0.0"
-)
-
-@app.get("/qa/health")
-async def qa_health():
-    """Проверка доступности самого тестового оркестратора"""
-    return {"status": "online", "service": "qa_orchestrator"}
+app = FastAPI(title="CRM QA Orchestrator", version="1.0.0")
 
 @app.post("/qa/run-stories")
 async def run_all_stories():
-    """
-    Эндпоинт запуска сквозного тестирования пользовательских историй.
-    Сканирует папку features и поочередно запускает логику проверок.
-    """
     report = {
-        "execution_status": "completed",
-        "total_stories_checked": 0,
-        "failed_stories": 0,
-        "details": {}
+        "total": 0, "passed": 0, "failed": 0, "errors": []
     }
     
-    # --- 1. ПРОВЕРКА ИСТОРИИ: catalog_flow.feature ---
-    feature_path = "features/catalog_flow.feature"
-    if os.path.exists(feature_path):
-        report["total_stories_checked"] += 1
-        
-        # Читаем текст фичи, чтобы прикрепить его к отчету для наглядности
-        with open(feature_path, "r", encoding="utf-8") as f:
-            feature_text = f.read()
-            
-        # Запускаем асинхронный движок шагов
-        step_results = await run_catalog_story_assertions()
-        
-        # Проверяем, были ли сбои среди шагов этой истории
-        has_failed_steps = any("❌" in result for result in step_results)
-        
-        if has_failed_steps:
-            report["failed_stories"] += 1
-            status = "FAILED"
-        else:
-            status = "PASSED"
-            
-        report["details"]["Наполнение каталога и автогенерация тегов"] = {
-            "status": status,
-            "feature_file": feature_path,
-            "steps_report": step_results
-        }
-    else:
-        report["details"]["Каталог"] = {"status": "SKIPPED", "reason": f"Файл {feature_path} не найден"}
+    stories = [
+        ("01_Сквозной_поток_каталога", "features/catalog_flow.feature", run_catalog_story_assertions),
+        ("02_Управление_брендами", "features/01_brand.feature", run_brand_lifecycle_and_transformations),
+        ("03_Управление_категориями", "features/02_category.feature", run_category_story_assertions),
+        ("04_Управление_товарами_и_аномалиями", "features/03_product.feature", run_product_story_assertions),
+    ]
 
-    # Если хотя бы одна глобальная история завалилась — отдаем статус 400 (Bad Request),
-    # чтобы CI/CD или скрипты деплоя сразу поняли, что код сломан.
-    if report["failed_stories"] > 0:
-        return JSONResponse(status_code=400, content=report)
-        
-    return report
+    for title, feature_path, assertion_fn in stories:
+        if os.path.exists(feature_path):
+            report["total"] += 1
+            step_results = await assertion_fn()
+            failed_steps = [step for step in step_results if "❌" in step]
+            
+            if failed_steps:
+                report["failed"] += 1
+                report["errors"].append({"story": title, "step": failed_steps[0]})
+            else:
+                report["passed"] += 1
+
+    # РЕНДЕРИНГ КРАСИВОГО ВЫВОДА СИЛАМИ БИБЛИОТЕКИ RICH
+    string_io = io.StringIO()
+    console = Console(file=string_io, force_terminal=True, color_system="truecolor")
+    
+    # 1. Строим шапку с процентом выполнения
+    rate = int((report["passed"] / report["total"]) * 100) if report["total"] > 0 else 0
+    color = "green" if report["failed"] == 0 else "red"
+    
+    console.print(f"\n[bold white]📊 ОТЧЕТ QA-ОРКЕСТРАТОРА:[/bold white] [bold {color}]УСПЕШНОСТЬ {rate}%[/bold {color}] ({report['passed']}/{report['total']})\n")
+    
+    # 2. Строим компактную таблицу результатов
+    table = Table(show_header=True, header_style="bold cyan", box=None)
+    table.add_column("БИЗНЕС-ИСТОРИЯ", width=40)
+    table.add_column("СТАТУС И КОНКРЕТНАЯ ОШИБКА", width=70)
+    
+    # Наполняем таблицу
+    error_map = {err["story"]: err["step"] for err in report["errors"]}
+    
+    for title, feature_path, _ in stories:
+        if os.path.exists(feature_path):
+            if title in error_map:
+                # Отрезаем значок крестика для чистоты и красим ошибку в красный
+                clean_err = error_map[title].replace("❌ ", "")
+                table.add_row(f"[red]• {title}[/red]", f"[bold red]❌ СБОЙ:[/bold red] [red]{clean_err}[/red]")
+            else:
+                table.add_row(f"[green]• {title}[/green]", "[bold green]✔ ПРОЙДЕН[/bold green]")
+                
+    console.print(table)
+    console.print("\n" + "─"*115 + "\n")
+    
+    status_code = 400 if report["failed"] > 0 else 200
+    return Response(content=string_io.getvalue(), media_type="text/plain; charset=utf-8", status_code=status_code)
 
 if __name__ == "__main__":
     import uvicorn
