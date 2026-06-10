@@ -1,11 +1,12 @@
 # services/core/src/routers/warehouse.py
 import uuid
+import httpx
 from typing import List, Optional
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.database import get_db
 from src.models import Product, Supplier, ProductUnit, LogisticsStatus, PhysicalStatus
@@ -13,9 +14,19 @@ from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse, Or
 
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
 
+# --- СХЕМЫ ВАЛИДАЦИИ ПОСТАВЩИКОВ ---
 class SupplierCreate(BaseModel):
     name: str
     contact_info: Optional[str] = None
+
+# --- НОВЫЕ СХЕМЫ ДЛЯ КОМАНДЫ 0101 (ПРИЕМКА ТОВАРА) ---
+class ReceiptItem(BaseModel):
+    unique_serial_number: str = Field(..., description="Уникальный серийный номер юнита")
+    actual_purchase_price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2, description="Фактическая цена из накладной")
+
+class SupplierInvoiceReceipt(BaseModel):
+    supplier_id: int
+    items: List[ReceiptItem]
 
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
@@ -60,7 +71,7 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
                 unique_serial_number=unique_sn,
                 purchase_price=item.estimated_purchase_price,
                 logistics_status=LogisticsStatus.IN_REQUEST,
-                physical_status=PhysicalStatus.EXPECTED,
+                physical_status=PhysicalStatus.EXPECTED, # ОБНОВЛЕНО: Используем нативный статус ожидания
                 is_reserved=False
             )
             db.add(new_unit)
@@ -77,10 +88,70 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
         )
 
     await db.flush()
-    await db.commit() # ВНЕДРЕНО: Жесткая фиксация в БД, чтобы данные были видны роутеру удаления
+    await db.commit()
     return SupplierOrderResponse(
         supplier_id=supplier.id,
         supplier_name=supplier.name,
         total_financial_load=total_financial_load,
         items=response_items
     )
+
+# ==========================================
+# 🛑 КОМАНДА 0101: ФАКТИЧЕСКАЯ ПРИЕМКА НА СКЛАД
+# ==========================================
+
+@router.post("/receipts", status_code=200)
+async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: AsyncSession = Depends(get_db)):
+    """Принимает накладную поставщика, обновляет цены закупки и выставляет товар в IN_STORE на полку"""
+    supplier = await db.get(Supplier, payload.supplier_id)
+    if not supplier:
+        raise HTTPException(status_code=404, detail=f"Поставщик с ID {payload.supplier_id} не найден")
+
+    accepted_count = 0
+    
+    for item in payload.items:
+        # Находим юнит строго по его уникальному серийному номеру
+        stmt = select(ProductUnit).where(
+            ProductUnit.unique_serial_number == item.unique_serial_number,
+            ProductUnit.supplier_id == payload.supplier_id
+        )
+        result = await db.execute(stmt)
+        unit = result.scalar_one_or_none()
+        
+        if not unit:
+            raise HTTPException(status_code=404, detail=f"Физический юнит с серийником {item.unique_serial_number} не найден для данного поставщика")
+            
+        # Защита: принимать можно только те товары, которые числятся в закупке (заявлены)
+        if unit.logistics_status != LogisticsStatus.IN_REQUEST:
+            raise HTTPException(status_code=400, detail=f"Юнит {item.unique_serial_number} не может быть принят, так как его статус {unit.logistics_status}")
+
+        # ОБНОВЛЯЕМ ДАННЫЕ ПО ПРИЕХАВШЕЙ НАКЛАДНОЙ
+        unit.purchase_price = item.actual_purchase_price
+        unit.logistics_status = LogisticsStatus.RECEIVED
+        unit.physical_status = PhysicalStatus.IN_STORE  # Товар материализуется на полке кассира!
+        accepted_count += 1
+
+    await db.flush()
+    await db.commit()
+
+    # АСИНХРОННОЕ МЕЖСЕРВИСНЫЕ ЛОГИРОВАНИЕ (Код 0101)
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={
+                    "service": "core", 
+                    "operation_code": "0101", # Системный код приёмки
+                    "level": "INFO", 
+                    "message": f"Накладная принята. Выставлено на полку {accepted_count} единиц товара от поставщика {supplier.name}."
+                },
+                timeout=2.0
+            )
+        except Exception:
+            pass # Логгер асинхронный, ядро продолжает лететь вперёд при сбое связи
+
+    return {
+        "status": "success", 
+        "message": f"Успешно принято на склад и выставлено на полки {accepted_count} шт. товара",
+        "supplier_name": supplier.name
+    }

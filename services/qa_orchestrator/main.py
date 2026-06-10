@@ -1,70 +1,96 @@
 import os
 import io
+import glob
+import importlib
 from fastapi import FastAPI, Response
 from rich.console import Console
 from rich.table import Table
 
-from features.steps.catalog_steps import run_catalog_story_assertions
-from features.steps.brand_steps import run_brand_lifecycle_and_transformations
-from features.steps.category_steps import run_category_story_assertions
-from features.steps.product_steps import run_product_story_assertions
-
-app = FastAPI(title="CRM QA Orchestrator", version="1.0.0")
+app = FastAPI(title="CRM Dynamic QA Orchestrator", version="2.0.0")
 
 @app.post("/qa/run-stories")
 async def run_all_stories():
-    report = {
-        "total": 0, "passed": 0, "failed": 0, "errors": []
-    }
+    report = {"total": 0, "passed": 0, "failed": 0, "errors": []}
     
-    stories = [
-        ("01_Сквозной_поток_каталога", "features/catalog_flow.feature", run_catalog_story_assertions),
-        ("02_Управление_брендами", "features/01_brand.feature", run_brand_lifecycle_and_transformations),
-        ("03_Управление_категориями", "features/02_category.feature", run_category_story_assertions),
-        ("04_Управление_товарами_и_аномалиями", "features/03_product.feature", run_product_story_assertions),
-    ]
+    # 1. Сканируем папку features и находим все файлы .feature, сортируем их по номерам 01_, 02_
+    feature_files = sorted(glob.glob("features/[0-9][0-9]_*.feature"))
+    
+    # Сюда будем собирать результаты для финальной таблицы Rich
+    table_rows = []
 
-    for title, feature_path, assertion_fn in stories:
-        if os.path.exists(feature_path):
-            report["total"] += 1
+    for feature_path in feature_files:
+        report["total"] += 1
+        filename = os.path.basename(feature_path)
+        prefix = filename[:2] # Забираем номер префикса (например, "01")
+        
+        # Загружаем ТЗ с диска
+        with open(feature_path, "r", encoding="utf-8") as f:
+            feature_text = f.read()
+
+        # Ищем соответствующий файл шагов по номеру префикса в папке steps
+        steps_pattern = f"features/steps/{prefix}_*_steps.py"
+        steps_files = glob.glob(steps_pattern)
+        
+        if not steps_files:
+            table_rows.append((filename, "red", f"❌ ПРОПУЩЕН: Не найден файл шагов для префикса {prefix}"))
+            report["failed"] += 1
+            report["errors"].append({"story": filename, "step": "Отсутствует файл реализации шагов"})
+            continue
+            
+        steps_file = steps_files[0]
+        # Превращаем путь в системное имя модуля для динамического импорта (например: "features.steps.01_catalog_steps")
+        module_name = steps_file.replace("/", ".").replace(".py", "")
+        
+        try:
+            # ДИНАМИЧЕСКИЙ АВТОИМПОРТ МОДУЛЯ НА ЛЕТУ
+            module = importlib.import_module(module_name)
+            
+            # Находим функцию-исполнитель внутри модуля (она должна начинаться с run_)
+            assertion_fn = None
+            for attr in dir(module):
+                if attr.startswith("run_") and attr.endswith("_assertions"):
+                    assertion_fn = getattr(module, attr)
+                    break
+                    
+            if not assertion_fn:
+                raise Exception(f"В модуле {module_name} не найдена функция выполнения run_*_assertions")
+
+            # Запускаем асинхронный движок тестов
             step_results = await assertion_fn()
             failed_steps = [step for step in step_results if "❌" in step]
             
             if failed_steps:
                 report["failed"] += 1
-                report["errors"].append({"story": title, "step": failed_steps[0]})
+                clean_err = failed_steps[0].replace("❌ ", "")
+                report["errors"].append({"story": filename, "step": clean_err})
+                table_rows.append((filename, "red", f"❌ СБОЙ: {clean_err}"))
             else:
                 report["passed"] += 1
+                table_rows.append((filename, "green", "✔ ПРОЙДЕН"))
+                
+        except Exception as e:
+            report["failed"] += 1
+            report["errors"].append({"story": filename, "step": str(e)})
+            table_rows.append((filename, "red", f"❌ АВАРЕЙНЫЙ СБОЙ ДВИЖКА: {str(e)}"))
 
-    # РЕНДЕРИНГ КРАСИВОГО ВЫВОДА СИЛАМИ БИБЛИОТЕКИ RICH
+    # СБОРКА И ПЕЧАТЬ ЛАКОНИЧНОЙ RICH-ТАБЛИЦЫ В ПОТОК СТАНДАРТНОГО ВЫВОДА
     string_io = io.StringIO()
     console = Console(file=string_io, force_terminal=True, color_system="truecolor")
     
-    # 1. Строим шапку с процентом выполнения
     rate = int((report["passed"] / report["total"]) * 100) if report["total"] > 0 else 0
     color = "green" if report["failed"] == 0 else "red"
     
-    console.print(f"\n[bold white]📊 ОТЧЕТ QA-ОРКЕСТРАТОРА:[/bold white] [bold {color}]УСПЕШНОСТЬ {rate}%[/bold {color}] ({report['passed']}/{report['total']})\n")
+    console.print(f"\n[bold white]📊 ДИНАМИЧЕСКИЙ ОТЧЕТ QA-ОРКЕСТРАТОРА:[/bold white] [bold {color}]УСПЕШНОСТЬ {rate}%[/bold {color}] ({report['passed']}/{report['total']})\n")
     
-    # 2. Строим компактную таблицу результатов
     table = Table(show_header=True, header_style="bold cyan", box=None)
-    table.add_column("БИЗНЕС-ИСТОРИЯ", width=40)
-    table.add_column("СТАТУС И КОНКРЕТНАЯ ОШИБКА", width=70)
+    table.add_column("БИЗНЕС-ИСТОРИЯ (АВТОПОИСК)")
+    table.add_column("СТАТУС И ДЕТАЛИЗАЦИЯ")
     
-    # Наполняем таблицу
-    error_map = {err["story"]: err["step"] for err in report["errors"]}
-    
-    for title, feature_path, _ in stories:
-        if os.path.exists(feature_path):
-            if title in error_map:
-                # Отрезаем значок крестика для чистоты и красим ошибку в красный
-                clean_err = error_map[title].replace("❌ ", "")
-                table.add_row(f"[red]• {title}[/red]", f"[bold red]❌ СБОЙ:[/bold red] [red]{clean_err}[/red]")
-            else:
-                table.add_row(f"[green]• {title}[/green]", "[bold green]✔ ПРОЙДЕН[/bold green]")
-                
+    for filename, text_color, status_text in table_rows:
+        table.add_row(f"[{text_color}]• {filename}[/{text_color}]", f"[{text_color}]{status_text}[/{text_color}]")
+        
     console.print(table)
-    console.print("\n" + "─"*115 + "\n")
+    console.print("\n" + "─"*100 + "\n")
     
     status_code = 400 if report["failed"] > 0 else 200
     return Response(content=string_io.getvalue(), media_type="text/plain; charset=utf-8", status_code=status_code)
