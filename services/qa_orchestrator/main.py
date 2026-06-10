@@ -6,46 +6,34 @@ from fastapi import FastAPI, Response
 from rich.console import Console
 from rich.table import Table
 
+# ИСПРАВЛЕНО: Все жесткие импорты удалены. Теперь движок на 100% автономен и динамичен!
 app = FastAPI(title="CRM Dynamic QA Orchestrator", version="2.0.0")
 
 @app.post("/qa/run-stories")
 async def run_all_stories():
     report = {"total": 0, "passed": 0, "failed": 0, "errors": []}
-    
-    # 1. Сканируем папку features и находим все файлы .feature, сортируем их по номерам 01_, 02_
     feature_files = sorted(glob.glob("features/[0-9][0-9]_*.feature"))
-    
-    # Сюда будем собирать результаты для финальной таблицы Rich
     table_rows = []
 
     for feature_path in feature_files:
         report["total"] += 1
         filename = os.path.basename(feature_path)
-        prefix = filename[:2] # Забираем номер префикса (например, "01")
+        prefix = filename[:2]
         
-        # Загружаем ТЗ с диска
-        with open(feature_path, "r", encoding="utf-8") as f:
-            feature_text = f.read()
-
-        # Ищем соответствующий файл шагов по номеру префикса в папке steps
         steps_pattern = f"features/steps/{prefix}_*_steps.py"
         steps_files = glob.glob(steps_pattern)
         
         if not steps_files:
-            table_rows.append((filename, "red", f"❌ ПРОПУЩЕН: Не найден файл шагов для префикса {prefix}"))
+            table_rows.append((filename, "red", f"❌ ПРОПУЩЕН: Нет файла шагов {prefix}"))
             report["failed"] += 1
             report["errors"].append({"story": filename, "step": "Отсутствует файл реализации шагов"})
             continue
             
         steps_file = steps_files[0]
-        # Превращаем путь в системное имя модуля для динамического импорта (например: "features.steps.01_catalog_steps")
         module_name = steps_file.replace("/", ".").replace(".py", "")
         
         try:
-            # ДИНАМИЧЕСКИЙ АВТОИМПОРТ МОДУЛЯ НА ЛЕТУ
             module = importlib.import_module(module_name)
-            
-            # Находим функцию-исполнитель внутри модуля (она должна начинаться с run_)
             assertion_fn = None
             for attr in dir(module):
                 if attr.startswith("run_") and attr.endswith("_assertions"):
@@ -53,9 +41,8 @@ async def run_all_stories():
                     break
                     
             if not assertion_fn:
-                raise Exception(f"В модуле {module_name} не найдена функция выполнения run_*_assertions")
+                raise Exception(f"В модуле {module_name} не найдена функция run_*_assertions")
 
-            # Запускаем асинхронный движок тестов
             step_results = await assertion_fn()
             failed_steps = [step for step in step_results if "❌" in step]
             
@@ -71,9 +58,8 @@ async def run_all_stories():
         except Exception as e:
             report["failed"] += 1
             report["errors"].append({"story": filename, "step": str(e)})
-            table_rows.append((filename, "red", f"❌ АВАРЕЙНЫЙ СБОЙ ДВИЖКА: {str(e)}"))
+            table_rows.append((filename, "red", f"❌ АВАРЕЙНЫЙ СБОЙ: {str(e)}"))
 
-    # СБОРКА И ПЕЧАТЬ ЛАКОНИЧНОЙ RICH-ТАБЛИЦЫ В ПОТОК СТАНДАРТНОГО ВЫВОДА
     string_io = io.StringIO()
     console = Console(file=string_io, force_terminal=True, color_system="truecolor")
     
@@ -90,7 +76,14 @@ async def run_all_stories():
         table.add_row(f"[{text_color}]• {filename}[/{text_color}]", f"[{text_color}]{status_text}[/{text_color}]")
         
     console.print(table)
-    console.print("\n" + "─"*100 + "\n")
+    
+    if report["errors"]:
+        console.print("\n[bold yellow]🔍 ДЕТАЛИЗАЦИЯ КРИТИЧЕСКИХ ОШИБОК ДЛЯ ОТЛАДКИ:[/bold yellow]")
+        for err in report["errors"]:
+            console.print(f"[red]• История:[/red] [white]{err['story']}[/white]")
+            console.print(f"  [red]Сбой на шаге:[/red] [bold yellow]{err['step']}[/bold yellow]\n")
+            
+    console.print("─"*100 + "\n")
     
     status_code = 400 if report["failed"] > 0 else 200
     return Response(content=string_io.getvalue(), media_type="text/plain; charset=utf-8", status_code=status_code)

@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-# Импортируем движок и роутеры из внутреннего пакета src/
 from src.database import async_engine
 from src.routers.catalog import router as catalog_router
 from src.routers.warehouse import router as warehouse_router
@@ -34,7 +33,7 @@ async def health_check():
     except Exception as e:
         return {"status": "unhealthy", "database": str(e)}
 
-# ВСЕ ТРИ РОУТЕРА РЕГИСТРИРУЮТСЯ ПО ЕДИНОМУ ИДЕАЛЬНОМУ СТАНДАРТУ API V1
+# ВЫРАВНЕНО ПОД ПРАВИЛА УРЕЗАНИЯ NGINX:
 app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(warehouse_router, prefix="/api/v1")
-app.include_router(cash_router, prefix="/api/v1")
+app.include_router(cash_router, prefix="/v1") # ИСПРАВЛЕНО: Префикс /v1, так как Nginx уже отрезал /api/
