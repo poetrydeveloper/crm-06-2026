@@ -1,3 +1,4 @@
+# services/qa_orchestrator/main.py
 import os
 import io
 import glob
@@ -6,14 +7,38 @@ from fastapi import FastAPI, Response
 from rich.console import Console
 from rich.table import Table
 
-# ИСПРАВЛЕНО: Все жесткие импорты удалены. Теперь движок на 100% автономен и динамичен!
+# Импортируем нашу автоматическую проверку аномалий
+from utils.anomaly_checker import verify_core_routers
+
 app = FastAPI(title="CRM Dynamic QA Orchestrator", version="2.0.0")
 
 @app.post("/qa/run-stories")
 async def run_all_stories():
     report = {"total": 0, "passed": 0, "failed": 0, "errors": []}
-    feature_files = sorted(glob.glob("features/[0-9][0-9]_*.feature"))
     table_rows = []
+    string_io = io.StringIO()
+    console = Console(file=string_io, force_terminal=True, color_system="truecolor")
+
+    # =========================================================================
+    # АВТОМАТИЧЕСКАЯ ПРОВЕРКА РОУТЕРОВ НА АНОМАЛИИ ПЕРЕД ЗАПУСКОМ ТЕСТОВ
+    # =========================================================================
+    is_routers_healthy, anomaly_error = await verify_core_routers()
+    
+    if not is_routers_healthy:
+        # Если найдена аномалия, блокируем запуск всех BDD-историй
+        report["total"] = 1
+        report["failed"] = 1
+        report["errors"].append({
+            "story": "КРИТИЧЕСКИЙ БЛОКЕР ИНФРАСТРУКТУРЫ", 
+            "step": anomaly_error
+        })
+        table_rows.append(("КРИТИЧЕСКИЙ БЛОКЕР ИНФРАСТРУКТУРЫ", "red", f"❌ ЗАБЛОКИРОВАНО: {anomaly_error}"))
+        
+        # Сразу переходим к генерации красивого отчета Rich (код ниже отработает корректно)
+        return generate_rich_response(report, table_rows, string_io, console)
+    # =========================================================================
+
+    feature_files = sorted(glob.glob("features/[0-9][0-9]_*.feature"))
 
     for feature_path in feature_files:
         report["total"] += 1
@@ -60,9 +85,11 @@ async def run_all_stories():
             report["errors"].append({"story": filename, "step": str(e)})
             table_rows.append((filename, "red", f"❌ АВАРЕЙНЫЙ СБОЙ: {str(e)}"))
 
-    string_io = io.StringIO()
-    console = Console(file=string_io, force_terminal=True, color_system="truecolor")
-    
+    return generate_rich_response(report, table_rows, string_io, console)
+
+
+def generate_rich_response(report, table_rows, string_io, console):
+    """ Вспомогательная функция отрисовки вашего оригинального Rich-отчета """
     rate = int((report["passed"] / report["total"]) * 100) if report["total"] > 0 else 0
     color = "green" if report["failed"] == 0 else "red"
     
@@ -87,6 +114,7 @@ async def run_all_stories():
     
     status_code = 400 if report["failed"] > 0 else 200
     return Response(content=string_io.getvalue(), media_type="text/plain; charset=utf-8", status_code=status_code)
+
 
 if __name__ == "__main__":
     import uvicorn

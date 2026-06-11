@@ -24,7 +24,7 @@ async def open_cash_day(payload: dict = Body(...), db: AsyncSession = Depends(ge
     
     new_day = CashDay(date=parsed_date, is_closed=False, total_revenue=Decimal("0.00"))
     db.add(new_day)
-    await db.flush()
+    await db.commit()
     return {"status": "success", "cash_day_id": new_day.id, "message": "Кассовая смена успешно открыта"}
 
 @router.post("/sales", status_code=201)
@@ -106,3 +106,31 @@ async def reopen_cash_day(cash_day_id: int, db: AsyncSession = Depends(get_db)):
     cash_day.is_closed = False
     await db.flush()
     return {"status": "success", "message": "Кассовый день успешно переоткрыт"}
+
+@router.post("/days/close", status_code=200)
+async def close_cash_day_api(db: AsyncSession = Depends(get_db)):
+    """Закрывает текущую активную кассовую смену и блокирует продажи"""
+    # Ищем открытую смену
+    stmt = select(CashDay).where(CashDay.is_closed == False)
+    result = await db.execute(stmt)
+    active_day = result.scalar_one_or_none()
+    
+    if not active_day:
+        raise HTTPException(status_code=400, detail="В системе нет открытых кассовых смен")
+        
+    # Закрываем смену
+    active_day.is_closed = True
+    await db.commit()
+    
+    # Асинхронно отправляем лог закрытия смены (Команда 0401/Живой пазл)
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={"service": "core", "operation_code": "0401", "level": "INFO", "message": f"Кассовая смена ID {active_day.id} успешно закрыта кассиром"}, 
+                timeout=1.0
+            )
+        except Exception:
+            pass
+            
+    return {"status": "success", "message": f"Кассовая смена ID {active_day.id} успешно закрыта"}

@@ -16,6 +16,14 @@ async def run_cashbox_lock_check_assertions():
         
     async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
         try:
+            # =========================================================================
+            # ИСПРАВЛЕНИЕ: Принудительно закрываем смену, оставшуюся от прошлых тестов,
+            # чтобы перевести кассу в заблокированное (неоткрытое) состояние.
+            # =========================================================================
+            # Примечание: адрес ручки уточните по вашему Swagger ядра (например, /api/v1/cash/days/close)
+            await client.post("/api/v1/cash/days/close") 
+            # =========================================================================
+
             sale_payload = {
                 "product_id": product_id, "customer_id": None, "sale_price": 500.00,
                 "amount_cash": 500.00, "amount_card": 0.00, "amount_credit": 0.00
