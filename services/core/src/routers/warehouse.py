@@ -29,6 +29,15 @@ class SupplierInvoiceReceipt(BaseModel):
     supplier_id: int
     items: List[NewReceiptItem]
 
+# --- НОВЫЕ ВАЛИДАЦИОННЫЕ МОДЕЛИ ДЛЯ РАЗУМПЛЕКТАЦИИ ---
+class DisassemblyTemplatedPayload(BaseModel):
+    unique_serial_number: str = Field(..., description="Серийный номер разбираемого набора")
+
+# ИСПРАВЛЕНО: Добавлена пропущенная Pydantic-модель для частичного разбора (устраняет NameError!)
+class DisassemblyPartialPayload(BaseModel):
+    unique_serial_number: str = Field(..., description="Серийный номер вскрываемого набора")
+    child_product_id: int = Field(..., description="ID детали, которую забирают из набора")
+
 # --- РОУТЕРЫ УПРАВЛЕНИЯ ПОСТАВЩИКАМИ ---
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
@@ -38,7 +47,6 @@ async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(ge
 
     new_sup = Supplier(name=payload.name, contact_info=payload.contact_info)
     db.add(new_sup)
-    # Исправлено на commit для гарантированного сохранения транзакции
     await db.commit()
     return {"status": "success", "supplier_id": new_sup.id}
 
@@ -90,7 +98,6 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
             )
         )
 
-    # Исправлено: жесткий коммит транзакции намертво в PostgreSQL вместо ненадежного flush
     await db.commit()
     
     return SupplierOrderResponse(
@@ -99,7 +106,6 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
         total_financial_load=total_financial_load,
         items=response_items
     )
-# services/core/src/routers/warehouse.py (ЧАСТЬ 3 из 3)
 
 # =========================================================================
 # 🛑 КОМАНДА 0101: ФАКТИЧЕСКАЯ ПРИЕМКА НА СКЛАД С АВТОГЕНЕРАЦИЕЙ СЕРИЙНИКОВ
@@ -163,9 +169,7 @@ async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: 
         "message": f"Успешно принято на склад, сгенерировано и выставлено на полки {accepted_count} шт. товара с уникальными серийными номерами",
         "supplier_name": supplier.name
     }
-
-class DisassemblyTemplatedPayload(BaseModel):
-    unique_serial_number: str = Field(..., description="Серийный номер разбираемого набора")
+# services/core/src/routers/warehouse.py (ЧАСТЬ 3 из 3)
 
 @router.post("/disassembly/templated", status_code=200)
 async def process_templated_disassembly(payload: DisassemblyTemplatedPayload, db: AsyncSession = Depends(get_db)):
@@ -192,7 +196,7 @@ async def process_templated_disassembly(payload: DisassemblyTemplatedPayload, db
 
     # 3. МЕНЯЕМ СТАТУС НАБОРА НА ВАШ НАТИВНЫЙ СТАТУС РАСФОРМИРОВАНИЯ
     parent_unit.physical_status = PhysicalStatus.IN_DISASSEMBLED
-    
+
     generated_satellites_count = 0
     
     # 4. ЦИКЛОМ ГЕНЕРИРУЕМ САТЕЛЛИТЫ ПО ШАБЛОНУ
@@ -237,4 +241,62 @@ async def process_templated_disassembly(payload: DisassemblyTemplatedPayload, db
         "status": "success",
         "message": f"Набор успешно расформирован. Сгенерировано и выставлено на полки {generated_satellites_count} сателлитов.",
         "parent_unit_status": parent_unit.physical_status
+    }
+
+@router.post("/disassembly/partial", status_code=200)
+async def process_partial_disassembly(payload: DisassemblyPartialPayload, db: AsyncSession = Depends(get_db)):
+    """Частичный дербан набора без шаблона с заморозкой недокомплекта (Команда 0103)"""
+    
+    # 1. Ищем физический юнит набора
+    stmt = select(ProductUnit).where(ProductUnit.unique_serial_number == payload.unique_serial_number).with_for_update()
+    result = await db.execute(stmt)
+    parent_unit = result.scalar_one_or_none()
+    
+    if not parent_unit:
+        raise HTTPException(status_code=404, detail=f"Набор с серийником {payload.unique_serial_number} не найден")
+        
+    if parent_unit.physical_status != PhysicalStatus.IN_STORE:
+        raise HTTPException(status_code=400, detail=f"Набор имеет статус {parent_unit.physical_status}. Вскрыть можно только полный набор.")
+
+    # 2. ИСПРАВЛЕНО: Переводим в LOST (Существующий статус для блокировки некомплекта!)
+    parent_unit.physical_status = PhysicalStatus.LOST
+    
+    # 3. ГЕНЕРИРУЕМ И СРАЗУ СПИСЫВАЕМ ИЗВЛЕЧЕННЫЙ ЮНИТ-САТЕЛЛИТ
+    sold_satellite_sn = f"SN-DERBAN-{uuid.uuid4().hex[:8].upper()}"
+    
+    sold_unit = ProductUnit(
+        product_id=payload.child_product_id,
+        supplier_id=parent_unit.supplier_id,
+        unique_serial_number=sold_satellite_sn,
+        purchase_price=Decimal("0.00"),
+        logistics_status=LogisticsStatus.RECEIVED,
+        physical_status=PhysicalStatus.SOLD, # Сразу уходит клиенту
+        is_reserved=False,
+        parent_unit_id=parent_unit.id       
+    )
+    db.add(sold_unit)
+
+    await db.commit()
+
+    # 4. ЛОГИРУЕМ ОПЕРАЦИЮ В ТАЙМЛАЙН (Команда 0103)
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={
+                    "service": "core", 
+                    "operation_code": "0103", 
+                    "level": "WARNING", 
+                    "message": f"ВНИМАНИЕ: Произведен частичный некомплектный разбор набора {parent_unit.unique_serial_number}. Извлечена деталь {sold_satellite_sn}. Набор заблокирован в статусе LOST."
+                }, 
+                timeout=1.0
+            )
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "message": "Частичный разбор зафиксирован. Извлеченная деталь списана, набор заморожен.",
+        "parent_unit_status": parent_unit.physical_status,
+        "extracted_unit_serial": sold_satellite_sn
     }

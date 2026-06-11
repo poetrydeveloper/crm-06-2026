@@ -21,6 +21,7 @@ class PhysicalStatus(str, enum.Enum):
     WRITE_OFF = "WRITE_OFF"               # Списано / Возврат брака поставщику
     IN_DISASSEMBLED = "IN_DISASSEMBLED"   # Набор, который был расформирован на сателлиты
     ABSORBED = "ABSORBED"                 # Головка, поглощенная обратно в собранный набор
+    FROZEN_INCOMPLETE = "FROZEN_INCOMPLETE"
 
 class ProductUnit(Base):
     """Физическая единица товара на магазине (Поштучный учет FIFO и Наборы)"""
