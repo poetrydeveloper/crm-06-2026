@@ -1,9 +1,9 @@
-# services/core/src/routers/warehouse.py
+# services/core/src/routers/warehouse.py (ЧАСТЬ 1 из 3)
 import uuid
 import httpx
 from typing import List, Optional
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel, Field
@@ -19,15 +19,17 @@ class SupplierCreate(BaseModel):
     name: str
     contact_info: Optional[str] = None
 
-# --- НОВЫЕ СХЕМЫ ДЛЯ КОМАНДЫ 0101 (ПРИЕМКА ТОВАРА) ---
-class ReceiptItem(BaseModel):
-    unique_serial_number: str = Field(..., description="Уникальный серийный номер юнита")
-    actual_purchase_price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2, description="Фактическая цена из накладной")
+# --- ИСПРАВЛЕННЫЕ СХЕМЫ ДЛЯ АВТОГЕНЕРАЦИИ СЕРИЙНИКОВ ПРИ ПРИЕМКЕ ---
+class NewReceiptItem(BaseModel):
+    product_id: int = Field(..., description="ID номенклатурной карточки товара")
+    quantity: int = Field(..., ge=1, description="Количество принимаемых единиц")
+    actual_purchase_price: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2, description="Фактическая цена закупки")
 
 class SupplierInvoiceReceipt(BaseModel):
     supplier_id: int
-    items: List[ReceiptItem]
+    items: List[NewReceiptItem]
 
+# --- РОУТЕРЫ УПРАВЛЕНИЯ ПОСТАВЩИКАМИ ---
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(Supplier).where(Supplier.name == payload.name))
@@ -36,7 +38,7 @@ async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(ge
 
     new_sup = Supplier(name=payload.name, contact_info=payload.contact_info)
     db.add(new_sup)
-    await db.flush()
+    # Исправлено на commit для гарантированного сохранения транзакции
     await db.commit()
     return {"status": "success", "supplier_id": new_sup.id}
 
@@ -44,6 +46,7 @@ async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(ge
 async def get_suppliers(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Supplier))
     return [{"id": s.id, "name": s.name, "contact_info": s.contact_info} for s in result.scalars().all()]
+# services/core/src/routers/warehouse.py (ЧАСТЬ 2 из 3)
 
 @router.post("/orders", status_code=status.HTTP_201_CREATED, response_model=SupplierOrderResponse)
 async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession = Depends(get_db)):
@@ -71,7 +74,7 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
                 unique_serial_number=unique_sn,
                 purchase_price=item.estimated_purchase_price,
                 logistics_status=LogisticsStatus.IN_REQUEST,
-                physical_status=PhysicalStatus.EXPECTED, # ОБНОВЛЕНО: Используем нативный статус ожидания
+                physical_status=PhysicalStatus.EXPECTED, 
                 is_reserved=False
             )
             db.add(new_unit)
@@ -87,22 +90,26 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
             )
         )
 
-    await db.flush()
+    # Исправлено: жесткий коммит транзакции намертво в PostgreSQL вместо ненадежного flush
     await db.commit()
+    
     return SupplierOrderResponse(
         supplier_id=supplier.id,
         supplier_name=supplier.name,
         total_financial_load=total_financial_load,
         items=response_items
     )
+# services/core/src/routers/warehouse.py (ЧАСТЬ 3 из 3)
 
-# ==========================================
-# 🛑 КОМАНДА 0101: ФАКТИЧЕСКАЯ ПРИЕМКА НА СКЛАД
-# ==========================================
-
+# =========================================================================
+# 🛑 КОМАНДА 0101: ФАКТИЧЕСКАЯ ПРИЕМКА НА СКЛАД С АВТОГЕНЕРАЦИЕЙ СЕРИЙНИКОВ
+# =========================================================================
 @router.post("/receipts", status_code=200)
 async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: AsyncSession = Depends(get_db)):
-    """Принимает накладную поставщика, обновляет цены закупки и выставляет товар в IN_STORE на полку"""
+    """
+    Принимает накладную поставщика, автоматически генерирует УНИКАЛЬНЫЕ 
+    серийные номера для каждой единицы товара и выставляет их на полку IN_STORE.
+    """
     supplier = await db.get(Supplier, payload.supplier_id)
     if not supplier:
         raise HTTPException(status_code=404, detail=f"Поставщик с ID {payload.supplier_id} не найден")
@@ -110,48 +117,49 @@ async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: 
     accepted_count = 0
     
     for item in payload.items:
-        # Находим юнит строго по его уникальному серийному номеру
-        stmt = select(ProductUnit).where(
-            ProductUnit.unique_serial_number == item.unique_serial_number,
-            ProductUnit.supplier_id == payload.supplier_id
-        )
-        result = await db.execute(stmt)
-        unit = result.scalar_one_or_none()
-        
-        if not unit:
-            raise HTTPException(status_code=404, detail=f"Физический юнит с серийником {item.unique_serial_number} не найден для данного поставщика")
+        # Проверяем, что номенклатурный шаблон (карточка) существует в системе
+        product = await db.get(Product, item.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Карточка товара с ID {item.product_id} не найдена")
             
-        # Защита: принимать можно только те товары, которые числятся в закупке (заявлены)
-        if unit.logistics_status != LogisticsStatus.IN_REQUEST:
-            raise HTTPException(status_code=400, detail=f"Юнит {item.unique_serial_number} не может быть принят, так как его статус {unit.logistics_status}")
+        # Циклом генерируем столько изолированных уникальных юнитов, сколько приехало в накладной
+        for _ in range(item.quantity):
+            # Генерируем абсолютно уникальный буквенно-цифровой серийный номер поштучного учета
+            generated_sn = f"SN-REC-{uuid.uuid4().hex[:8].upper()}"
+            
+            new_unit = ProductUnit(
+                product_id=item.product_id,
+                supplier_id=payload.supplier_id,
+                unique_serial_number=generated_sn,     # Жесткая автогенерация уникального номера!
+                purchase_price=item.actual_purchase_price,
+                logistics_status=LogisticsStatus.RECEIVED,
+                physical_status=PhysicalStatus.IN_STORE, # Товар мгновенно материализуется на полке кассира!
+                is_reserved=False
+            )
+            db.add(new_unit)
+            accepted_count += 1
 
-        # ОБНОВЛЯЕМ ДАННЫЕ ПО ПРИЕХАВШЕЙ НАКЛАДНОЙ
-        unit.purchase_price = item.actual_purchase_price
-        unit.logistics_status = LogisticsStatus.RECEIVED
-        unit.physical_status = PhysicalStatus.IN_STORE  # Товар материализуется на полке кассира!
-        accepted_count += 1
-
-    await db.flush()
+    # Намертво сохраняем автогенерированные серийные номера в PostgreSQL
     await db.commit()
 
-    # АСИНХРОННОЕ МЕЖСЕРВИСНЫЕ ЛОГИРОВАНИЕ (Код 0101)
+    # АСИНХРОННОЕ МЕЖСЕРВИСНОЕ ЛОГИРОВАНИЕ (Код 0101)
     async with httpx.AsyncClient() as client:
         try:
             await client.post(
                 "http://logger:8001/api/v1/log", 
                 json={
                     "service": "core", 
-                    "operation_code": "0101", # Системный код приёмки
+                    "operation_code": "0101", 
                     "level": "INFO", 
-                    "message": f"Накладная принята. Выставлено на полку {accepted_count} единиц товара от поставщика {supplier.name}."
+                    "message": f"Накладная принята. Выставлено на полку {accepted_count} единиц товара с автогенерацией уникальных номеров от поставщика {supplier.name}."
                 },
                 timeout=2.0
             )
         except Exception:
-            pass # Логгер асинхронный, ядро продолжает лететь вперёд при сбое связи
+            pass 
 
     return {
         "status": "success", 
-        "message": f"Успешно принято на склад и выставлено на полки {accepted_count} шт. товара",
+        "message": f"Успешно принято на склад, сгенерировано и выставлено на полки {accepted_count} шт. товара с уникальными серийными номерами",
         "supplier_name": supplier.name
     }

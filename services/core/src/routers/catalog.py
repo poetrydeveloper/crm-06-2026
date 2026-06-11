@@ -1,7 +1,7 @@
 # services/core/src/routers/catalog.py
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, cast, JSON, String, and_
 from typing import List
 from src.database import get_db
 from src.models import Product, Brand, Category, ProductUnit, PhysicalStatus
@@ -28,7 +28,7 @@ async def create_brand(payload: BrandCreate, db: AsyncSession = Depends(get_db))
     
     new_brand = Brand(name=transformed_name, description=payload.description)
     db.add(new_brand)
-    await db.flush()  # ЖЕСТКАЯ ФИКСАЦИЯ ДЛЯ СГЕНЕРИРОВАНИЯ ID В ПОСТГРЕСЕ
+    await db.commit()  # ЖЕСТКАЯ ФИКСАЦИЯ ДЛЯ СГЕНЕРИРОВАНИЯ ID В ПОСТГРЕСЕ
     await db.commit() # Сохраняем "в камне"
     return {"status": "success", "brand_id": new_brand.id, "name": transformed_name}
 
@@ -66,7 +66,7 @@ async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(ge
     transformed_name = transform_to_snake_case(payload.name)
     
     # Сбрасываем кэш сессии, чтобы база данных увидела только что созданные записи из параллельных шагов
-    await db.flush()
+    await db.commit()
     
     existing = await db.execute(select(Category).where(Category.name == transformed_name))
     if existing.scalar_one_or_none():
@@ -79,7 +79,7 @@ async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(ge
             
     new_category = Category(name=transformed_name, parent_id=payload.parent_id)
     db.add(new_category)
-    await db.flush()  # Генерируем category_id
+    await db.commit()  # Генерируем category_id
     await db.commit() # Принудительно пушим в Postgres, блокируя дубликаты для следующих запросов
     return {"status": "success", "category_id": new_category.id, "name": transformed_name}
 
@@ -119,7 +119,7 @@ async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/products", status_code=status.HTTP_201_CREATED)
 async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)):
     # Принудительно обновляем состояние сессии перед проверками связей
-    await db.flush()
+    await db.commit()
     
     category = await db.get(Category, payload.category_id)
     if not category:
@@ -150,7 +150,7 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
         search_aliases=[a.lower().strip() for a in payload.search_aliases]
     )
     db.add(new_product)
-    await db.flush()
+    await db.commit()
     await db.commit()
     return {"status": "success", "product_id": new_product.id, "generated_tags": tags}
 
@@ -199,24 +199,66 @@ async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
         "products": [{"id": p.id, "code": p.code, "name": p.name} for p in products]
     }
 
-@router.get("/search", response_model=List[ProductResponse])
+@router.get("/search")
 async def smart_search(q: str = Query(..., min_length=2), db: AsyncSession = Depends(get_db)):
-    query_word = q.lower().strip()
-    json_search_pattern = f'"{query_word}"'
-    stmt = (
-        select(Product, func.count(ProductUnit.id).filter(ProductUnit.physical_status == PhysicalStatus.IN_STORE, ProductUnit.is_reserved == False).label("available_qty"))
-        .outerjoin(ProductUnit, Product.id == ProductUnit.product_id)
-        .where(or_(Product.name.ilike(f"%{query_word}%"), Product.code.ilike(f"{query_word}%"), func.jsonb_contains(Product.search_tags, func.cast(json_search_pattern, func.JSONB)), func.jsonb_contains(Product.search_aliases, func.cast(json_search_pattern, func.JSONB))))
-        .group_by(Product.id).limit(15)
-    )
-    result = await db.execute(stmt)
+    clean_query = q.lower().strip()
+    if not clean_query:
+        return []
+        
+    search_words = clean_query.split()
+    
+    # Ищем карточки товаров по совпадению слов в имени или коде
+    word_filters = []
+    for word in search_words:
+        word_filters.append(
+            or_(
+                Product.name.ilike(f"%{word}%"),
+                Product.code.ilike(f"%{word}%")
+            )
+        )
+        
+    products_stmt = select(Product).where(and_(*word_filters)).limit(15)
+    products_res = await db.execute(products_stmt)
+    products = products_res.scalars().all()
+    
+    if not products:
+        return []
+        
     products_list = []
-    for row in result.all():
-        prod_obj = row[0]
-        qty = row[1]
-        products_list.append(ProductResponse(id=prod_obj.id, code=prod_obj.code, name=prod_obj.name, recommended_retail_price=prod_obj.recommended_retail_price, search_tags=prod_obj.search_tags, search_aliases=prod_obj.search_aliases, images=prod_obj.images or [], available_qty=qty))
+    for prod in products:
+        # Считаем живые остатки на полке склада
+        qty_stmt = select(func.count(ProductUnit.id)).where(
+            ProductUnit.product_id == prod.id,
+            ProductUnit.physical_status == PhysicalStatus.IN_STORE,
+            ProductUnit.is_reserved == False
+        )
+        qty_res = await db.execute(qty_stmt)
+        qty = qty_res.scalar_one_or_none() or 0
+        
+        # БЕЗОПАСНЫЙ ПАРСИНГ ТЕГОВ И АЛИАСОВ ДЛЯ ЗАЩИТЫ ОТ ОШИБКИ 500
+        tags = prod.search_tags
+        if isinstance(tags, str):
+            try: tags = ast.literal_eval(tags)
+            except: tags = [tags]
+            
+        aliases = prod.search_aliases
+        if isinstance(aliases, str):
+            try: aliases = ast.literal_eval(aliases)
+            except: aliases = [aliases]
+            
+        products_list.append({
+            "id": prod.id,
+            "code": prod.code,
+            "name": prod.name,
+            "recommended_retail_price": float(prod.recommended_retail_price) if prod.recommended_retail_price else 0.0,
+            "search_tags": tags if isinstance(tags, list) else [],
+            "search_aliases": aliases if isinstance(aliases, list) else [],
+            "images": prod.images if isinstance(prod.images, list) else [],
+            "available_qty": int(qty)
+        })
+        
     return products_list
-
+    
 @router.get("/brands", response_model=List[dict])
 async def get_brands(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Brand))
@@ -226,3 +268,19 @@ async def get_brands(db: AsyncSession = Depends(get_db)):
 async def get_categories(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Category))
     return [{"id": c.id, "name": c.name, "parent_id": c.parent_id} for c in result.scalars().all()]
+
+@router.get("/debug-db-raw-product")
+async def debug_db_raw_product(db: AsyncSession = Depends(get_db)):
+    """Временный отладочный эндпоинт для выгрузки сырых тегов из Postgres"""
+    result = await db.execute(select(Product).limit(1))
+    prod = result.scalar_one_or_none()
+    if not prod:
+        return {"error": "Товары в базе отсутствуют"}
+    return {
+        "id": prod.id,
+        "name": prod.name,
+        "code": prod.code,
+        "search_tags_raw_type": str(type(prod.search_tags)),
+        "search_tags_value": prod.search_tags,
+        "search_aliases_value": prod.search_aliases
+    }

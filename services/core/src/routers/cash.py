@@ -69,7 +69,7 @@ async def process_cash_sale(payload: dict = Body(...), db: AsyncSession = Depend
         amount_credit=Decimal(str(payload.get("amount_credit", 0)))
     )
     db.add(new_event)
-    await db.flush()
+    await db.commit()
 
     new_item = CashEventItem(
         cash_event_id=new_event.id,
@@ -81,7 +81,7 @@ async def process_cash_sale(payload: dict = Body(...), db: AsyncSession = Depend
     
     # Списываем юнит в статус SOLD
     oldest_unit.physical_status = PhysicalStatus.SOLD
-    await db.flush()
+    await db.commit()
 
     async with httpx.AsyncClient() as client:
         try:
@@ -104,7 +104,7 @@ async def reopen_cash_day(cash_day_id: int, db: AsyncSession = Depends(get_db)):
     if active_day.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Нельзя переоткрыть этот день, пока в системе активна другая кассовая смена.")
     cash_day.is_closed = False
-    await db.flush()
+    await db.commit()
     return {"status": "success", "message": "Кассовый день успешно переоткрыт"}
 
 @router.post("/days/close", status_code=200)

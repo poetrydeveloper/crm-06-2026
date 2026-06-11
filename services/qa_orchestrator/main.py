@@ -3,14 +3,30 @@ import os
 import io
 import glob
 import importlib
+import httpx
+import asyncpg
 from fastapi import FastAPI, Response
 from rich.console import Console
 from rich.table import Table
 
-# Импортируем нашу автоматическую проверку аномалий
 from utils.anomaly_checker import verify_core_routers
 
 app = FastAPI(title="CRM Dynamic QA Orchestrator", version="2.0.0")
+
+DATABASE_URL = "postgresql://crm_admin:crm_secure_password@db:5432/crm_main_database"
+
+async def global_clean_database():
+    """Глобальная очистка СУБД перед стартом каждой бизнес-истории"""
+    try:
+        conn = await asyncpg.connect(DATABASE_URL)
+        await conn.execute("""
+            TRUNCATE cash_event_items, cash_events, cash_days, 
+                     product_units, products, categories, brands, suppliers 
+            RESTART IDENTITY CASCADE;
+        """)
+        await conn.close()
+    except Exception as e:
+        print(f"⚠️ Ошибка очистки СУБД в оркестраторе: {e}", flush=True)
 
 @app.post("/qa/run-stories")
 async def run_all_stories():
@@ -19,28 +35,23 @@ async def run_all_stories():
     string_io = io.StringIO()
     console = Console(file=string_io, force_terminal=True, color_system="truecolor")
 
-    # =========================================================================
-    # АВТОМАТИЧЕСКАЯ ПРОВЕРКА РОУТЕРОВ НА АНОМАЛИИ ПЕРЕД ЗАПУСКОМ ТЕСТОВ
-    # =========================================================================
     is_routers_healthy, anomaly_error = await verify_core_routers()
-    
     if not is_routers_healthy:
-        # Если найдена аномалия, блокируем запуск всех BDD-историй
         report["total"] = 1
         report["failed"] = 1
-        report["errors"].append({
-            "story": "КРИТИЧЕСКИЙ БЛОКЕР ИНФРАСТРУКТУРЫ", 
-            "step": anomaly_error
-        })
+        report["errors"].append({"story": "КРИТИЧЕСКИЙ БЛОКЕР ИНФРАСТРУКТУРЫ", "step": anomaly_error})
         table_rows.append(("КРИТИЧЕСКИЙ БЛОКЕР ИНФРАСТРУКТУРЫ", "red", f"❌ ЗАБЛОКИРОВАНО: {anomaly_error}"))
-        
-        # Сразу переходим к генерации красивого отчета Rich (код ниже отработает корректно)
-        return generate_rich_response(report, table_rows, string_io, console)
-    # =========================================================================
+        return await generate_rich_response(report, table_rows, string_io, console)
 
     feature_files = sorted(glob.glob("features/[0-9][0-9]_*.feature"))
 
     for feature_path in feature_files:
+        # =========================================================================
+        # ПРИНЦИП ЧИСТОГО ЛИСТА: Сносим базу перед каждым сценарием!
+        # =========================================================================
+        await global_clean_database()
+        # =========================================================================
+
         report["total"] += 1
         filename = os.path.basename(feature_path)
         prefix = filename[:2]
@@ -85,11 +96,10 @@ async def run_all_stories():
             report["errors"].append({"story": filename, "step": str(e)})
             table_rows.append((filename, "red", f"❌ АВАРЕЙНЫЙ СБОЙ: {str(e)}"))
 
-    return generate_rich_response(report, table_rows, string_io, console)
+    return await generate_rich_response(report, table_rows, string_io, console)
 
 
-def generate_rich_response(report, table_rows, string_io, console):
-    """ Вспомогательная функция отрисовки вашего оригинального Rich-отчета """
+async def generate_rich_response(report, table_rows, string_io, console):
     rate = int((report["passed"] / report["total"]) * 100) if report["total"] > 0 else 0
     color = "green" if report["failed"] == 0 else "red"
     
@@ -110,11 +120,26 @@ def generate_rich_response(report, table_rows, string_io, console):
             console.print(f"[red]• История:[/red] [white]{err['story']}[/white]")
             console.print(f"  [red]Сбой на шаге:[/red] [bold yellow]{err['step']}[/bold yellow]\n")
             
+            if "11_cashbox_smart_search" in err['story']:
+                console.print("[bold cyan]📊 [ОТЧЕТ ИЗ БАЗЫ ДАННЫХ ДЛЯ ОРАКЛА]:[/bold cyan]")
+                try:
+                    async with httpx.AsyncClient() as client:
+                        db_snap = await client.get("http://backend:8000/api/v1/catalog/debug-db-raw-product", timeout=2.0)
+                        if db_snap.status_code == 200:
+                            raw = db_snap.json()
+                            console.print(f"   ▪️ [Имя товара в БД]: [green]{raw.get('name')}[/green]")
+                            console.print(f"   ▪️ [Код / Артикул]:   [green]{raw.get('code')}[/green]")
+                            console.print(f"   ▪️ [Массив тегов]:    [magenta]{raw.get('search_tags_value')}[/magenta]")
+                            console.print(f"   ▪️ [Массив алиасов]:  [magenta]{raw.get('search_aliases_value')}[/magenta]\n")
+                        else:
+                            console.print(f"   ❌ Отладочная ручка ядра вернула статус {db_snap.status_code}\n")
+                except Exception as snap_ex:
+                    console.print(f"   ❌ Не удалось забрать отчет из БД: {str(snap_ex)}\n")
+            
     console.print("─"*100 + "\n")
     
     status_code = 400 if report["failed"] > 0 else 200
     return Response(content=string_io.getvalue(), media_type="text/plain; charset=utf-8", status_code=status_code)
-
 
 if __name__ == "__main__":
     import uvicorn
