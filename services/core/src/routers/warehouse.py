@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel, Field
 
 from src.database import get_db
-from src.models import Product, Supplier, ProductUnit, LogisticsStatus, PhysicalStatus
+from src.models import Product, Supplier, ProductUnit, LogisticsStatus, PhysicalStatus, ProductAssemblyTemplate
 from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse, OrderResponseItem
 
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
@@ -162,4 +162,79 @@ async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: 
         "status": "success", 
         "message": f"Успешно принято на склад, сгенерировано и выставлено на полки {accepted_count} шт. товара с уникальными серийными номерами",
         "supplier_name": supplier.name
+    }
+
+class DisassemblyTemplatedPayload(BaseModel):
+    unique_serial_number: str = Field(..., description="Серийный номер разбираемого набора")
+
+@router.post("/disassembly/templated", status_code=200)
+async def process_templated_disassembly(payload: DisassemblyTemplatedPayload, db: AsyncSession = Depends(get_db)):
+    """Разукомплектация целого набора на дочерние сателлиты по жесткому шаблону (Команда 0102)"""
+    
+    # 1. Ищем физический юнит набора по его серийному номеру
+    stmt = select(ProductUnit).where(ProductUnit.unique_serial_number == payload.unique_serial_number).with_for_update()
+    result = await db.execute(stmt)
+    parent_unit = result.scalar_one_or_none()
+    
+    if not parent_unit:
+        raise HTTPException(status_code=404, detail=f"Набор с серийным номером {payload.unique_serial_number} не найден на складе")
+        
+    if parent_unit.physical_status != PhysicalStatus.IN_STORE:
+        raise HTTPException(status_code=400, detail=f"Набор имеет статус {parent_unit.physical_status}. Разобрать можно только товар в статусе IN_STORE.")
+
+    # 2. Ищем жесткий шаблон разбора для этой карточки товара
+    template_stmt = select(ProductAssemblyTemplate).where(ProductAssemblyTemplate.parent_product_id == parent_unit.product_id)
+    template_res = await db.execute(template_stmt)
+    templates = template_res.scalars().all()
+    
+    if not templates:
+        raise HTTPException(status_code=400, detail="Для данной карточки товара не зарегистрирован шаблон разукомплектации")
+
+    # 3. МЕНЯЕМ СТАТУС НАБОРА НА ВАШ НАТИВНЫЙ СТАТУС РАСФОРМИРОВАНИЯ
+    parent_unit.physical_status = PhysicalStatus.IN_DISASSEMBLED
+    
+    generated_satellites_count = 0
+    
+    # 4. ЦИКЛОМ ГЕНЕРИРУЕМ САТЕЛЛИТЫ ПО ШАБЛОНУ
+    for t in templates:
+        for _ in range(t.quantity):
+            # Генерируем уникальный серийный номер для каждого сателлита
+            satellite_sn = f"SN-SAT-{uuid.uuid4().hex[:8].upper()}"
+            
+            new_satellite = ProductUnit(
+                product_id=t.child_product_id,
+                supplier_id=parent_unit.supplier_id,
+                unique_serial_number=satellite_sn,
+                purchase_price=Decimal("0.00"), # Цена закупки сателлита высчитывается аналитикой
+                logistics_status=LogisticsStatus.RECEIVED,
+                physical_status=PhysicalStatus.IN_STORE, # Сателлиты мгновенно падают на полку!
+                is_reserved=False,
+                parent_unit_id=parent_unit.id # ЖЕСТКАЯ РЕКУРСИВНАЯ ПРИВЯЗКА К НАБОРУ!
+            )
+            db.add(new_satellite)
+            generated_satellites_count += 1
+            
+    # Намертво фиксируем транзакцию разбора в PostgreSQL (никаких флушей!)
+    await db.commit()
+
+    # 5. ОТПРАВЛЯЕМ МЕЖСЕРВИСНЫЙ ЛОГ ТАЙМЛАЙНА (Команда 0102)
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={
+                    "service": "core", 
+                    "operation_code": "0102", # Код операции разукомплектации наборов
+                    "level": "INFO", 
+                    "message": f"Проведена разукомплектация набора {parent_unit.unique_serial_number}. Набор списан. На полку выставлено {generated_satellites_count} сателлитов."
+                }, 
+                timeout=1.0
+            )
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "message": f"Набор успешно расформирован. Сгенерировано и выставлено на полки {generated_satellites_count} сателлитов.",
+        "parent_unit_status": parent_unit.physical_status
     }

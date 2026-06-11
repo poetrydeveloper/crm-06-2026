@@ -10,6 +10,7 @@ from .cash_day import CashDay
 from .cash_event import CashEvent, CashEventType
 from .cash_event_item import CashEventItem
 from .pending_sale import PendingSale
+from .product_assembly_template import ProductAssemblyTemplate  # <-- СТРОКА 1: ИМПОРТ
 
 # Экспортируем все модели единым фронтом для SQLAlchemy и Alembic
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "CashEvent",
     "CashEventType",
     "CashEventItem",
-    "PendingSale"
+    "PendingSale",
+    "ProductAssemblyTemplate"  # <-- СТРОКА 2: ЭКСПОРТ В СПИСОК __all__
 ]
