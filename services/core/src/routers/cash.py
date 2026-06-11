@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.database import get_db
 from src.models import CashDay, CashEvent, CashEventItem, ProductUnit, PhysicalStatus, CashEventType
+from pydantic import BaseModel
 
 # ИСПРАВЛЕНО: Чистый префикс без дублирования сегментов
 router = APIRouter(prefix="/cash", tags=["Кассовый узел и Продажи"])
@@ -134,3 +135,73 @@ async def close_cash_day_api(db: AsyncSession = Depends(get_db)):
             pass
             
     return {"status": "success", "message": f"Кассовая смена ID {active_day.id} успешно закрыта"}
+
+
+
+
+class CashReturnPayload(BaseModel):
+    unique_serial_number: str
+    return_reason: str = "Возврат от покупателя"
+
+@router.post("/returns", status_code=200)
+async def process_cash_return(payload: CashReturnPayload, db: AsyncSession = Depends(get_db)):
+    """Оформление возврата штучного товара от клиента по серийному номеру (Команда 0501)"""
+    # 1. Проверяем открытую кассовую смену
+    day_stmt = select(CashDay).where(CashDay.is_closed == False)
+    day_res = await db.execute(day_stmt)
+    active_day = day_res.scalar_one_or_none()
+    if not active_day:
+        raise HTTPException(status_code=400, detail="Кассовая смена не открыта. Возврат невозможен.")
+
+    # 2. Ищем проданный юнит по серийнику с блокировкой строки
+    stmt = select(ProductUnit).where(
+        ProductUnit.unique_serial_number == payload.unique_serial_number
+    ).with_for_update()
+    result = await db.execute(stmt)
+    unit = result.scalar_one_or_none()
+
+    if not unit:
+        raise HTTPException(status_code=404, detail=f"Товар с серийным номером {payload.unique_serial_number} не найден в системе")
+
+    if unit.physical_status != PhysicalStatus.SOLD:
+        raise HTTPException(status_code=400, detail=f"Товар имеет статус {unit.physical_status}. Возврат оформляется только для проданных товаров (SOLD).")
+
+    # 3. ВОЗВРАЩАЕМ ДЕТАЛЬ НА ПОЛКУ МАГАЗИНА И ФИКСИРУЕМ КОММИТ
+    unit.physical_status = PhysicalStatus.IN_STORE
+    
+    # Создаем запись о кассовом событии возврата с отрицательной выручкой
+    return_event = CashEvent(
+        cash_day_id=active_day.id,
+        customer_id=None,
+        type=CashEventType.SALE, # Используем дефолтный тип SALE (база определит возврат по знаку минус)
+        total_amount=-unit.purchase_price, 
+        amount_cash=-unit.purchase_price,
+        amount_card=Decimal("0.00"),
+        amount_credit=Decimal("0.00")
+    )
+    db.add(return_event)
+    
+    # Жесткий коммит намертво в СУБД PostgreSQL (никаких флушей!)
+    await db.commit()
+
+    # 4. ОТПРАВЛЯЕМ МЕЖСЕРВИСНЫЙ ЛОГ ТАЙМЛАЙНА (Команда 0501)
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={
+                    "service": "core", 
+                    "operation_code": "0501", 
+                    "level": "INFO", 
+                    "message": f"Оформлен возврат товара. Юнит {unit.unique_serial_number} вернулся на полку. Причина: {payload.return_reason}"
+                }, 
+                timeout=1.0
+            )
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "message": f"Товар {unit.unique_serial_number} успешно принят обратно на баланс магазина",
+        "current_physical_status": unit.physical_status
+    }
