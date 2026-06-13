@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/atomic/Header';
 import { Catalog } from './pages/admin/Catalog';
 import { Receipts } from './pages/warehouse/Receipts';
+import { Cashbox } from './pages/cashbox/Cashbox';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -16,7 +17,7 @@ export default function App() {
   // Простейший асинхронный роутер для прохождения BDD-тестов без внешних либ
   const renderPage = () => {
     if (currentPath === '/' || currentPath === '') {
-      return <div style={{ padding: '20px' }}>🛒 ЖИВАЯ КАССА (В разработке)</div>;
+      return <Cashbox />;
     }
     if (currentPath.startsWith('/admin')) {
       return <Catalog />;
