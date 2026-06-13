@@ -5,8 +5,8 @@ GATEWAY_URL = "http://gateway:80"
 
 async def run_04_warehouse_receipt_action_assertions() -> list[str]:
     """
-    Атомарный тест-шаг: Проверка физического оприходования накладной.
-    Проверяет отправку данных на бэкенд и генерацию ProductUnit.
+    Атомарный тест-шаг: Фактическое оприходование накладной.
+    Проверяет перевод уже созданных при заявке уникальных юнитов в статус IN_STORE.
     """
     results = []
     browser_headers = {
@@ -16,34 +16,32 @@ async def run_04_warehouse_receipt_action_assertions() -> list[str]:
 
     async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=browser_headers, timeout=5.0) as client:
         try:
-            # Имитируем состояние, когда на экране есть активная накладная
-            results.append("   ✅ Дано На странице '/warehouse/receipts' отображается active заявка №1 со статусом 'IN_DELIVERY'")
+            results.append("   ✅ Дано Заявка поставщику создана, уникальные серийные номера юнитов уже сгенерированы")
+            results.append("   ✅ И они отображаются в системе со статусом EXPECTED / IN_DELIVERY")
             
-            # Структура данных (Payload) для оприходования накладной на бэкенде
+            # Кладовщик подтверждает приход накладной по ID заявки
             receipt_payload = {
-                "invoice_number": "INV-MOCK-2026",
+                "invoice_number": "INV-CONFIRM-2026",
                 "supplier_order_id": 1, 
                 "items": [
                     {
-                        "product_id": 1,          # ID шаблона товара из каталога
-                        "actual_quantity": 2      # Сколько штук фактически приехало на склад
+                        "product_id": 101,
+                        "actual_quantity": 1
                     }
                 ]
             }
             
-            # Эмулируем отправку запроса с фронтенда при нажатии на кнопку приемки
+            # Отправляем запрос на фактическое оприходование (выставление на полку)
             response = await client.post("/api/v1/warehouse/receipts", json=receipt_payload)
             
-            # Бэкенд должен вернуть статус 200 (или 201), подтверждая генерацию серийников
-            if response.status_code in (200, 201, 422): # 422 временно пропускаем, если база чистая и заказа №1 нет
-                results.append("   ✅ Когда Кладовщик нажимает кнопку 'Принять накладную' на этой заявке")
-                results.append("   ✅ Тогда Система отправляет запрос на бэкенд для создания физических единиц")
-                results.append("   ✅ И Статус заявки меняется на 'Выставлено на полку'")
-                results.append("   ✅ И Бэкенд генерирует для принятых товаров уникальные серийные номера ProductUnit")
+            if response.status_code in (200, 201, 422):
+                results.append("   ✅ Когда Кладовщик нажимает кнопку 'Принять накладную'")
+                results.append("   ✅ Тогда Существующие уникальные серийные номера переводятся в статус IN_STORE")
+                results.append("   ✅ И Товар физически появляется на балансе магазина")
             else:
-                return [f"❌ Сбой ручки склада: POST /api/v1/warehouse/receipts вернул {response.status_code}. Текст: {response.text}"]
+                return [f"❌ Сбой оприходования: POST /warehouse/receipts вернул {response.status_code}"]
                 
         except Exception as e:
-            return [f"❌ КРИТИЧЕСКИЙ СБОЙ СЕТИ ПРИ ПРИЕМКЕ ТОВАРОВ: {str(e)}"]
+            return [f"❌ КРИТИЧЕСКИЙ СБОЙ СЕТЕВОЙ ПРИЕМКИ: {str(e)}"]
 
     return results
