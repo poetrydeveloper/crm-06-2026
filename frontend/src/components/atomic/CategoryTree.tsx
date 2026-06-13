@@ -2,18 +2,18 @@
 import React from 'react';
 
 interface Category {
-  id: int;
+  id: number; // Исправлено с int
   name: string;
-  parent_id: int | null;
+  parent_id: number | null; // Исправлено с int
 }
 
 interface CategoryTreeProps {
   categories: Category[];
-  selectedCategoryId: int | null;
-  onSelectCategory: (id: int) => void;
+  selectedCategoryId: number | null; // Исправлено с int
+  onSelectCategory: (id: number) => void; // Исправлено с int
   onCreateCategory: () => void;
-  onEditCategory: (id: int) => void;
-  onDeleteCategory: (id: int) => void;
+  onEditCategory: (id: number) => void; // Исправлено с int
+  onDeleteCategory: (id: number) => void; // Исправлено с int
 }
 
 export const CategoryTree: React.FC<CategoryTreeProps> = ({
@@ -53,7 +53,7 @@ export const CategoryTree: React.FC<CategoryTreeProps> = ({
                 <button onClick={(e) => { e.stopPropagation(); onDeleteCategory(cat.id); }} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer' }}>🗑️</button>
               </div>
             </div>
-            
+
             {/* Рендеринг подкатегорий (2-й уровень) */}
             <ul style={{ listStyleType: 'none', paddingLeft: '15px', marginTop: '5px' }}>
               {categories.filter(sub => sub.parent_id === cat.id).map(sub => (

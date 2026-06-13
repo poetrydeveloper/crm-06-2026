@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/atomic/Header';
 import { Catalog } from './pages/admin/Catalog';
-
+import { Receipts } from './pages/warehouse/Receipts';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -22,7 +22,7 @@ export default function App() {
       return <Catalog />;
     }
     if (currentPath.startsWith('/warehouse')) {
-      return <div style={{ padding: '20px' }}>📦 СКЛАД, ЗАЯВКИ И ПРИЕМКА (В разработке)</div>;
+      return <Receipts />;
     }
     return <div style={{ padding: '20px' }}>🚨 404 — Страница не найдена</div>;
   };
