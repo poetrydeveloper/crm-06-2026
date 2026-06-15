@@ -2,13 +2,29 @@
 import React from 'react';
 
 export const Header: React.FC = () => {
-  // Функция для SPA навигации без перезагрузки всей страницы
-  const navigateTo = (e: React.MouseEvent<HTMLButtonElement>, path: string) => {
-    e.preventDefault();
+  const currentPath = window.location.pathname;
+
+  // Функция умного SPA-перехода без перезагрузки страницы
+  const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
-    // Триггерим событие, чтобы App.tsx поймал смену адреса
+    // Генерируем кастомное событие, чтобы App.tsx мгновенно перерисовал страницу
     window.dispatchEvent(new Event('popstate'));
   };
+
+  const linkStyle = (path: string) => ({
+    background: currentPath === path ? '#333' : 'transparent',
+    color: currentPath === path ? '#4fa8ff' : '#fff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontWeight: 'bold' as const,
+    fontSize: '14px',
+    outline: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  });
 
   return (
     <header style={{
@@ -16,36 +32,41 @@ export const Header: React.FC = () => {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 20px',
-      background: '#1e1e1e',
-      color: '#fff',
+      background: '#1a1a1a',
       height: '60px',
       borderBottom: '1px solid #333'
     }}>
-      <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#4fa8ff' }}> {/* Исправлено с fontOrder */}
-        ⚡ Lightweight CRM
+      {/* Логотип системы */}
+      <div 
+        onClick={() => navigateTo('/')} 
+        style={{ fontSize: '18px', fontWeight: 'bold', color: '#4fa8ff', cursor: 'pointer' }}
+      >
+        🛠️ Lightweight CRM
       </div>
-      <nav style={{ display: 'flex', gap: '20px' }}>
-        <button 
-          onClick={(e) => navigateTo(e, '/')} 
-          style={{ background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' }}
-        >
-          🛒 Касса
+
+      {/* Панель навигационных кнопок */}
+      <nav style={{ display: 'flex', gap: '10px' }}>
+        <button onClick={() => navigateTo('/')} style={linkStyle('/')}>
+          🛒 Живая касса
         </button>
-        <button 
-          onClick={(e) => navigateTo(e, '/admin/catalog')} 
-          style={{ background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' }}
-        >
-          ⚙️ Админка
+
+        <button onClick={() => navigateTo('/admin/catalog')} style={linkStyle('/admin/catalog')}>
+          🗂️ Каталог (Админ)
         </button>
-        <button 
-          onClick={(e) => navigateTo(e, '/warehouse/receipts')} 
-          style={{ background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' }}
-        >
-          📦 Склад
+
+        {/* 🔥 НОВАЯ КНОПКА: Ссылается на нашу новую страницу кассовых дней */}
+        <button onClick={() => navigateTo('/admin/cash-days')} style={linkStyle('/admin/cash-days')}>
+          ⚙️ Смены (Админ)
+        </button>
+
+        <button onClick={() => navigateTo('/warehouse')} style={linkStyle('/warehouse')}>
+          📦 Склад логистики
         </button>
       </nav>
-      <div style={{ fontSize: '14px', color: '#888' }}>
-        Оператор: admin
+
+      {/* Правая часть (Системное время или индикатор робота) */}
+      <div style={{ fontSize: '12px', color: '#666', fontWeight: 'bold' }}>
+        v1.0.26 ● QA ACTIVE
       </div>
     </header>
   );

@@ -4,6 +4,7 @@ import { Header } from './components/atomic/Header';
 import { Catalog } from './pages/admin/Catalog';
 import { Receipts } from './pages/warehouse/Receipts';
 import { Cashbox } from './pages/cashbox/Cashbox';
+import { CashDays } from './pages/admin/CashDays';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -19,8 +20,11 @@ export default function App() {
     if (currentPath === '/' || currentPath === '') {
       return <Cashbox />;
     }
-    if (currentPath.startsWith('/admin')) {
+    if (currentPath.startsWith('/admin/catalog')) {
       return <Catalog />;
+    }
+    if (currentPath.startsWith('/admin/cash-days')) {
+      return <CashDays />;
     }
     if (currentPath.startsWith('/warehouse')) {
       return <Receipts />;
