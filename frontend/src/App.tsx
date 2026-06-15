@@ -6,6 +6,7 @@ import { Receipts } from './pages/warehouse/Receipts';
 import { Cashbox } from './pages/cashbox/Cashbox';
 import { CashDays } from './pages/admin/CashDays';
 import { OrdersTimeline } from './pages/admin/OrdersTimeline';
+import { UnitMap } from './pages/admin/UnitMap';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -30,6 +31,9 @@ export default function App() {
     // 🔥 СТРОГИЙ РОУТ ДЛЯ ТАЙМЛАЙНА ЛОГИСТИКИ
     if (currentPath === '/admin/orders') {
       return <OrdersTimeline />;
+    }
+    if (currentPath === '/admin/unit-map') {
+      return <UnitMap />;
     }
     if (currentPath.startsWith('/warehouse')) {
       return <Receipts />;

@@ -49,12 +49,12 @@ export const Header: React.FC = () => {
         <button onClick={() => navigateTo('/')} style={linkStyle('/')}>🛒 Живая касса</button>
         <button onClick={() => navigateTo('/admin/catalog')} style={linkStyle('/admin/catalog')}>🗂️ Каталог (Админ)</button>
         <button onClick={() => navigateTo('/admin/cash-days')} style={linkStyle('/admin/cash-days')}>⚙️ Смены (Админ)</button>
-        
-        {/* 🔥 КНОПКА ПЕРЕХОДА НА ТАЙМЛАЙН ЛОГИСТИКИ */}
         <button onClick={() => navigateTo('/admin/orders')} style={linkStyle('/admin/orders')}>📈 Логистика (Админ)</button>
-        
+        <button onClick={() => navigateTo('/admin/unit-map')} style={linkStyle('/admin/unit-map')}>🔍 Аудит Юнитов (Админ)</button>
+
         <button onClick={() => navigateTo('/warehouse')} style={linkStyle('/warehouse')}>📦 Склад логистики</button>
       </nav>
+
 
       {/* Правая часть (Системное время или индикатор робота) */}
       <div style={{ fontSize: '12px', color: '#666', fontWeight: 'bold' }}>
