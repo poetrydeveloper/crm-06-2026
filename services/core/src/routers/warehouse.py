@@ -11,6 +11,8 @@ from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse
 
 # 🔥 Чистые атомарные импорты из папки компонентов
 from src.components.order_manager import OrderManager
+from src.components.order_splitter import OrderSplitter       
+from src.components.pre_order_analyzer import PreOrderAnalyzer
 from src.components.receipt_manager import ReceiptManager
 from src.components.disassembly_manager import DisassemblyManager
 from src.components.absorption_manager import AbsorptionManager
@@ -59,6 +61,16 @@ async def get_suppliers(db: AsyncSession = Depends(get_db)):
 @router.post("/orders", status_code=status.HTTP_201_CREATED, response_model=SupplierOrderResponse)
 async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession = Depends(get_db)):
     return await OrderManager.create_order(payload, db)
+
+@router.get("/orders", status_code=200)
+async def get_supplier_orders_split_list(db: AsyncSession = Depends(get_db)):
+    """🔥 Перенаправляем запрос в атомарный сплиттер активных/архивных заказов"""
+    return await OrderSplitter.get_orders_split(db)
+
+@router.get("/pre-orders", status_code=200)
+async def get_warehouse_analytics_pre_orders(db: AsyncSession = Depends(get_db)):
+    """🔥 Перенаправляем запрос в атомарный анализатор дефицитных рисков"""
+    return await PreOrderAnalyzer.get_mock_pre_orders(db)
 
 @router.post("/receipts", status_code=200)
 async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: AsyncSession = Depends(get_db)):

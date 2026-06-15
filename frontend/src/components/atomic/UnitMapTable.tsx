@@ -1,6 +1,7 @@
 // frontend/src/components/atomic/UnitMapTable.tsx
 import React from 'react';
 
+
 export interface PhysicalUnitRecord {
   id: number;
   product_name: string;

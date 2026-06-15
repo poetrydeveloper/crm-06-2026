@@ -40,19 +40,13 @@ class OrderManager:
 
             response_items.append(
                 OrderResponseItem(
-                    product_id=product.id,
-                    product_name=product.name,
-                    code=product.code,
-                    quantity=item.quantity,
-                    estimated_price=item.estimated_purchase_price,
-                    subtotal=subtotal
+                    product_id=product.id, product_name=product.name, code=product.code,
+                    quantity=item.quantity, estimated_price=item.estimated_purchase_price, subtotal=subtotal
                 )
             )
 
         await db.commit()
         return SupplierOrderResponse(
-            supplier_id=supplier.id,
-            supplier_name=supplier.name,
-            total_financial_load=total_financial_load,
-            items=response_items
+            supplier_id=supplier.id, supplier_name=supplier.name,
+            total_financial_load=total_financial_load, items=response_items
         )

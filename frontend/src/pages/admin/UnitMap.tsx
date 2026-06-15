@@ -1,6 +1,7 @@
 // frontend/src/pages/admin/UnitMap.tsx
-import React, { useState, useEffect } from 'react';
-import { UnitMapTable, PhysicalUnitRecord } from '../../components/atomic/UnitMapTable';
+import React, { useState, useEffect } from 'react'; // 🔥 ИСПРАВЛЕНО: Явно добавили useState и useEffect
+import { UnitMapTable } from '../../components/atomic/UnitMapTable';
+import type { PhysicalUnitRecord } from '../../components/atomic/UnitMapTable';
 
 export const UnitMap: React.FC = () => {
   const [units, setUnits] = useState<PhysicalUnitRecord[]>([]);
