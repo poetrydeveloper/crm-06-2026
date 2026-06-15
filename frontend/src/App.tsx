@@ -5,6 +5,7 @@ import { Catalog } from './pages/admin/Catalog';
 import { Receipts } from './pages/warehouse/Receipts';
 import { Cashbox } from './pages/cashbox/Cashbox';
 import { CashDays } from './pages/admin/CashDays';
+import { OrdersTimeline } from './pages/admin/OrdersTimeline';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -25,6 +26,10 @@ export default function App() {
     }
     if (currentPath.startsWith('/admin/cash-days')) {
       return <CashDays />;
+    }
+    // 🔥 СТРОГИЙ РОУТ ДЛЯ ТАЙМЛАЙНА ЛОГИСТИКИ
+    if (currentPath === '/admin/orders') {
+      return <OrdersTimeline />;
     }
     if (currentPath.startsWith('/warehouse')) {
       return <Receipts />;

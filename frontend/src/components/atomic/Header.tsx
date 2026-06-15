@@ -46,22 +46,14 @@ export const Header: React.FC = () => {
 
       {/* Панель навигационных кнопок */}
       <nav style={{ display: 'flex', gap: '10px' }}>
-        <button onClick={() => navigateTo('/')} style={linkStyle('/')}>
-          🛒 Живая касса
-        </button>
-
-        <button onClick={() => navigateTo('/admin/catalog')} style={linkStyle('/admin/catalog')}>
-          🗂️ Каталог (Админ)
-        </button>
-
-        {/* 🔥 НОВАЯ КНОПКА: Ссылается на нашу новую страницу кассовых дней */}
-        <button onClick={() => navigateTo('/admin/cash-days')} style={linkStyle('/admin/cash-days')}>
-          ⚙️ Смены (Админ)
-        </button>
-
-        <button onClick={() => navigateTo('/warehouse')} style={linkStyle('/warehouse')}>
-          📦 Склад логистики
-        </button>
+        <button onClick={() => navigateTo('/')} style={linkStyle('/')}>🛒 Живая касса</button>
+        <button onClick={() => navigateTo('/admin/catalog')} style={linkStyle('/admin/catalog')}>🗂️ Каталог (Админ)</button>
+        <button onClick={() => navigateTo('/admin/cash-days')} style={linkStyle('/admin/cash-days')}>⚙️ Смены (Админ)</button>
+        
+        {/* 🔥 КНОПКА ПЕРЕХОДА НА ТАЙМЛАЙН ЛОГИСТИКИ */}
+        <button onClick={() => navigateTo('/admin/orders')} style={linkStyle('/admin/orders')}>📈 Логистика (Админ)</button>
+        
+        <button onClick={() => navigateTo('/warehouse')} style={linkStyle('/warehouse')}>📦 Склад логистики</button>
       </nav>
 
       {/* Правая часть (Системное время или индикатор робота) */}
