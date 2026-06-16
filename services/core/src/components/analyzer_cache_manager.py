@@ -1,12 +1,14 @@
 # services/core/src/components/analyzer_cache_manager.py
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.models import PurchaseException
 
-# Оперативный буфер кэша внутри ядра СУБД для моментальной отдачи фронтенду
+# Оперативный буфер кэша расчетов дефицита (остается в RAM для моментальной отдачи фронтенду)
 _PRE_ORDERS_CACHE = []
-_EXCLUDED_PRODUCT_IDS = set()
 
-ANALYZER_TRIGGER_URL = "http://crm_analyzer_service:8002/api/v1/analyzer/trigger-calculation"
+# Исправлено: Домен сетевого имени сервиса из docker-compose — analyzer
+ANALYZER_TRIGGER_URL = "http://analyzer:8002/api/v1/analyzer/trigger-calculation"
 
 class AnalyzerCacheManager:
     @staticmethod
@@ -18,28 +20,28 @@ class AnalyzerCacheManager:
         """
         global _PRE_ORDERS_CACHE
         
-        # Если кэш пуст, пробуем принудительно триггернуть микросервис аналитики
         if not _PRE_ORDERS_CACHE:
             async with httpx.AsyncClient() as client:
                 try:
                     res = await client.post(ANALYZER_TRIGGER_URL, timeout=1.5)
                     if res.status_code == 200:
-                        # Аналитика успешно посчитала и обновила кэш через /cache-update
                         return {"status": "success", "fallback_active": False, "data": _PRE_ORDERS_CACHE}
                 except Exception:
-                    # Аналитика физически мертва или перегружена — включаем защитный плейсхолдер
                     pass
 
-        # Если кэш по-прежнему пуст (фоллбэк-режим), отдаем пустой массив с флагом плейсхолдера
         if not _PRE_ORDERS_CACHE:
             return {
                 "status": "success",
-                "fallback_active": True,  # Сигнал фронтенду включить UI-плейсхолдер!
+                "fallback_active": True,  
                 "data": []
             }
 
-        # Фильтруем выданный аналитикой кэш, отсекая product_id, на которые нажали галочку исключения
-        filtered_data = [item for item in _PRE_ORDERS_CACHE if item.get("product_id") not in _EXCLUDED_PRODUCT_IDS]
+        # 🔍 ЧЕСТНЫЙ ВЫКАЧ ИСКЛЮЧЕНИЙ ИЗ ПОСТГРЕСА: Отсекаем забаненные в СУБД товары
+        stmt = select(PurchaseException.product_id)
+        res = await db.execute(stmt)
+        excluded_ids = set(res.scalars().all())
+
+        filtered_data = [item for item in _PRE_ORDERS_CACHE if item.get("product_id") not in excluded_ids]
         return {"status": "success", "fallback_active": False, "data": filtered_data}
 
     @staticmethod
@@ -50,13 +52,22 @@ class AnalyzerCacheManager:
         return {"status": "success", "message": "Свежий аналитический кэш успешно залит в буфер ядра"}
 
     @staticmethod
-    async def add_to_blacklist(product_id: int) -> dict:
-        """🚫 Галочка 'Больше не находить': занесение товара в черный список исключений ядра"""
-        global _EXCLUDED_PRODUCT_IDS
-        _EXCLUDED_PRODUCT_IDS.add(product_id)
-        return {"status": "success", "message": f"Товар #{product_id} успешно забанен на уровне ядра"}
+    async def add_to_blacklist(product_id: int, db: AsyncSession) -> dict:
+        """🚫 Галочка 'Больше не находить': физическая асинхронная запись в СУБД PostgreSQL"""
+        # Проверяем, нет ли уже такого товара в исключениях, чтобы не поймать Unique Constraint Error
+        stmt = select(PurchaseException).where(PurchaseException.product_id == product_id)
+        existing = await db.execute(stmt)
+        if existing.scalar_one_or_none():
+            return {"status": "success", "message": f"Товар #{product_id} уже занесен в черный список СУБД"}
+
+        new_exception = PurchaseException(product_id=product_id)
+        db.add(new_exception)
+        await db.commit()
+        return {"status": "success", "message": f"Товар #{product_id} успешно сохранен в таблицы исключений СУБД"}
 
     @staticmethod
-    async def get_raw_exceptions() -> list[int]:
-        """🔍 Отдача сырого черного списка для аналитического микросервиса"""
-        return list(_EXCLUDED_PRODUCT_IDS)
+    async def get_raw_exceptions(db: AsyncSession) -> list[int]:
+        """🔍 Отдача сырого черного списка напрямую из СУБД для аналитического микросервиса"""
+        stmt = select(PurchaseException.product_id)
+        res = await db.execute(stmt)
+        return list(res.scalars().all())
