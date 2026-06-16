@@ -109,19 +109,19 @@ async def process_partial_disassembly(payload: DisassemblyPartialPayload, db: As
 async def process_set_absorption(payload: SetAbsorptionPayload, db: AsyncSession = Depends(get_db)):
     return await AbsorptionManager.execute_set_absorption(payload.parent_product_id, payload.satellite_unit_ids, db)
 
-# 🔥 ОБНОВЛЕНО: Роуты конструктора правил теперь перенаправляются в распределенный RuleEngine аналитики в будущем
-# А пока сохраняются в кэш-менеджер для обратной совместимости по тегам
 @router.get("/purchase-rules", status_code=200)
-async def get_all_dynamic_purchase_rules():
+async def get_all_dynamic_purchase_rules(db: AsyncSession = Depends(get_db)):
+    """📋 Получение списка всех тегов-правил автозаказа напрямую из СУБД PostgreSQL"""
     from src.components.rule_engine import RuleEngine
-    return await RuleEngine.get_rules()
+    return await RuleEngine.get_rules(db) # 🔥 ИСПРАВЛЕНО: Передаем сессию db
 
 @router.post("/purchase-rules", status_code=201)
 async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: AsyncSession = Depends(get_db)):
+    """🛠️ Добавление нового правила из тегов в конструктор с фиксацией в СУБД"""
     from src.components.rule_engine import RuleEngine
     return await RuleEngine.add_rule(payload, db)
 
 @router.post("/pre-orders/exclude", status_code=200)
-async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload):
-    """🚫 Перенаправление галочки 'Больше не находить' в AnalyzerCacheManager"""
-    return await AnalyzerCacheManager.add_to_blacklist(payload.product_id)
+async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload, db: AsyncSession = Depends(get_db)):
+    """🚫 Нажатие ГАЛОЧКИ: помещение товара в черный список исключений СУБД 'Больше не находить'"""
+    return await AnalyzerCacheManager.add_to_blacklist(payload.product_id, db) # 🔥 ИСПРАВЛЕНО: Передаем сессию db
