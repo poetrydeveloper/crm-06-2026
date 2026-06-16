@@ -10,7 +10,9 @@ from .cash_day import CashDay
 from .cash_event import CashEvent, CashEventType
 from .cash_event_item import CashEventItem
 from .pending_sale import PendingSale
-from .product_assembly_template import ProductAssemblyTemplate  # <-- СТРОКА 1: ИМПОРТ
+from .product_assembly_template import ProductAssemblyTemplate  
+from .purchase_rule import PurchaseRule                # 🔥 Новой атомарный импорт таблицы правил
+from .purchase_exception import PurchaseException      # 🔥 Новой атомарный импорт таблицы исключений
 
 # Экспортируем все модели единым фронтом для SQLAlchemy и Alembic
 __all__ = [
@@ -28,5 +30,7 @@ __all__ = [
     "CashEventType",
     "CashEventItem",
     "PendingSale",
-    "ProductAssemblyTemplate"  # <-- СТРОКА 2: ЭКСПОРТ В СПИСОК __all__
+    "ProductAssemblyTemplate",
+    "PurchaseRule",         # 🔥 Экспорт в список __all__ для конструктора директора
+    "PurchaseException"     # 🔥 Экспорт в список __all__ для черного списка
 ]
