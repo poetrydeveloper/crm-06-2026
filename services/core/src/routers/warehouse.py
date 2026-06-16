@@ -2,20 +2,19 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pydantic import BaseModel, Field
 
 from src.database import get_db
-from src.models import Supplier
 from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse
 
 # 🔥 Чистые атомарные импорты из папки компонентов
 from src.components.order_manager import OrderManager
 from src.components.order_splitter import OrderSplitter       
-from src.components.analyzer_cache_manager import AnalyzerCacheManager # 🔥 НОВЫЙ ИЗОЛИРОВАННЫЙ КЭШ-КОМПОНЕНТ
+from src.components.analyzer_cache_manager import AnalyzerCacheManager 
 from src.components.receipt_manager import ReceiptManager
 from src.components.disassembly_manager import DisassemblyManager
 from src.components.absorption_manager import AbsorptionManager
+from src.components.supplier_manager import SupplierManager # Новой изолированный менеджер контрагентов
 
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
 
@@ -54,18 +53,13 @@ class ExceptionCreatePayload(BaseModel):
 
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(Supplier).where(Supplier.name == payload.name))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Поставщик с таким именем уже существует")
-    new_sup = Supplier(name=payload.name, contact_info=payload.contact_info)
-    db.add(new_sup)
-    await db.commit()
-    return {"status": "success", "supplier_id": new_sup.id}
+    """🛠️ Делегируем задачу в изолированный атомарный менеджер"""
+    return await SupplierManager.create_supplier(payload, db)
 
 @router.get("/suppliers", response_model=List[dict])
 async def get_suppliers(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Supplier))
-    return [{"id": s.id, "name": s.name, "contact_info": s.contact_info} for s in result.scalars().all()]
+    """📋 Делегируем задачу в изолированный атомарный менеджер"""
+    return await SupplierManager.get_all_suppliers(db)
 
 @router.post("/orders", status_code=status.HTTP_201_CREATED, response_model=SupplierOrderResponse)
 async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession = Depends(get_db)):
@@ -75,22 +69,19 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
 async def get_supplier_orders_split_list(db: AsyncSession = Depends(get_db)):
     return await OrderSplitter.get_orders_split(db)
 
-# 🔥 ОБНОВЛЕНО: Отдача предзаказов теперь идет строго через кэш с флагами отказоустойчивости
 @router.get("/pre-orders", status_code=200)
-async def get_warehouse_analytics_pre_orders(db: AsyncSession = Depends(get_db)):
-    """📋 Выдача кэшированных листов предзаказа фронтенду с плейсхолдер-защитой"""
-    return await AnalyzerCacheManager.get_cached_pre_orders(db)
+async def get_warehouse_analytics_pre_orders():
+    """📋 Выдача кэша фронтенду (Менеджер сам автономно откроет сессию селекта)"""
+    return await AnalyzerCacheManager.get_cached_pre_orders()
 
-# 🔥 ДОБАВЛЕНО: Сетевой эндпоинт для заливки готовых расчетов из crm_analyzer_service
 @router.post("/pre-orders/cache-update", status_code=200)
 async def update_pre_orders_cache_from_analyzer(payload: list[dict]):
     """📥 Приём готового расчёта дефицита от микросервиса аналитики"""
     return await AnalyzerCacheManager.update_cache_payload(payload)
 
-# 🔥 ДОБАВЛЕНО: Отдача сырого черного списка исключений для аналитики
 @router.get("/purchase-exceptions-raw", status_code=200)
 async def get_raw_purchase_exceptions_list():
-    """🔍 Выдача черного списка забаненных товаров для crm_analyzer_service"""
+    """🔍 Отдача сырого черного списка для crm_analyzer_service"""
     return await AnalyzerCacheManager.get_raw_exceptions()
 
 @router.post("/receipts", status_code=200)
@@ -113,7 +104,7 @@ async def process_set_absorption(payload: SetAbsorptionPayload, db: AsyncSession
 async def get_all_dynamic_purchase_rules(db: AsyncSession = Depends(get_db)):
     """📋 Получение списка всех тегов-правил автозаказа напрямую из СУБД PostgreSQL"""
     from src.components.rule_engine import RuleEngine
-    return await RuleEngine.get_rules(db) # 🔥 ИСПРАВЛЕНО: Передаем сессию db
+    return await RuleEngine.get_rules(db) 
 
 @router.post("/purchase-rules", status_code=201)
 async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: AsyncSession = Depends(get_db)):
@@ -122,6 +113,6 @@ async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: Async
     return await RuleEngine.add_rule(payload, db)
 
 @router.post("/pre-orders/exclude", status_code=200)
-async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload, db: AsyncSession = Depends(get_db)):
-    """🚫 Нажатие ГАЛОЧКИ: помещение товара в черный список исключений СУБД 'Больше не находить'"""
-    return await AnalyzerCacheManager.add_to_blacklist(payload.product_id, db) # 🔥 ИСПРАВЛЕНО: Передаем сессию db
+async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload):
+    """🚫 Нажатие ГАЛОЧКИ: Исключения теперь вызываются автономно, убран лишний параметр db"""
+    return await AnalyzerCacheManager.add_to_blacklist(payload.product_id) 
