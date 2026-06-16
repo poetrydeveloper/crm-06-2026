@@ -1,8 +1,10 @@
 // frontend/src/pages/admin/OrdersTimeline.tsx
 import React, { useState, useEffect } from 'react';
-import { TimelineCard } from '../../components/atomic/TimelineCard';
 import { OrdersTabs } from '../../components/atomic/OrdersTabs';
 import { PreOrdersTable } from '../../components/atomic/PreOrdersTable';
+import { RuleCreatorBlock } from '../../components/atomic/RuleCreatorBlock';
+import { ActiveRulesList } from '../../components/atomic/ActiveRulesList';
+import { OrdersListContainer } from '../../components/atomic/OrdersListContainer';
 import type { PreOrderRecord } from '../../components/atomic/PreOrdersTable';
 
 interface OrderItem {
@@ -18,6 +20,14 @@ interface TimelineOrder {
   items?: OrderItem[];
 }
 
+interface RuleRecord {
+  id: number;
+  price_operator: string;
+  price_value: number;
+  name_contains: string | null;
+  stock_threshold: number;
+}
+
 type TabType = 'active' | 'archived' | 'preorder';
 
 export const OrdersTimeline: React.FC = () => {
@@ -25,30 +35,24 @@ export const OrdersTimeline: React.FC = () => {
   const [activeOrders, setActiveOrders] = useState<TimelineOrder[]>([]);
   const [archivedOrders, setArchivedOrders] = useState<TimelineOrder[]>([]);
   const [preOrders, setPreOrders] = useState<PreOrderRecord[]>([]);
+  const [rules, setRules] = useState<RuleRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 📥 1. Загрузка разделенных по датам заказов с бэкенд-сплиттера
   const loadOrdersData = async () => {
     try {
       const response = await fetch('/api/v1/warehouse/orders');
       if (response.ok) {
         const data = await response.json();
-        
-        // Подмешиваем дефолтный состав для карточек таймлайна, если база пустая
         const mapItems = (arr: any[]) => arr.map(o => ({
           ...o,
           items: o.items || [{ product_name: 'Набор инструментов кассира 100 предметов', quantity: 1 }]
         }));
-
         setActiveOrders(mapItems(data.active || []));
         setArchivedOrders(mapItems(data.archived || []));
       }
-    } catch (error) {
-      console.error('Ошибка логистики заказов:', error);
-    }
+    } catch (error) { console.error(error); }
   };
 
-  // 📥 2. Загрузка буфера аналитических предзаказов
   const loadPreOrdersData = async () => {
     try {
       const response = await fetch('/api/v1/warehouse/pre-orders');
@@ -56,59 +60,61 @@ export const OrdersTimeline: React.FC = () => {
         const data = await response.json();
         setPreOrders(Array.isArray(data) ? data : []);
       }
-    } catch (error) {
-      console.error('Ошибка листа предзаказов:', error);
-    }
+    } catch (error) { console.error(error); }
+  };
+
+  const loadRulesData = async () => {
+    try {
+      const response = await fetch('/api/v1/warehouse/purchase-rules');
+      if (response.ok) {
+        const data = await response.json();
+        setRules(Array.isArray(data) ? data : []);
+      }
+    } catch (error) { console.error(error); }
   };
 
   const syncAllData = async () => {
     setLoading(true);
-    await Promise.all([loadOrdersData(), loadPreOrdersData()]);
+    await Promise.all([loadOrdersData(), loadPreOrdersData(), loadRulesData()]);
     setLoading(false);
   };
 
-  useEffect(() => {
-    syncAllData();
-  }, []);
+  useEffect(() => { syncAllData(); }, []);
 
-  // ⚡ 3. Превращение ПРЕД-ЗАКАЗА в реальную закупку (POST /warehouse/orders)
   const handleQuickOrder = async (record: PreOrderRecord) => {
-    const supplierIdStr = prompt(`Оформление закупки товара "${record.product_name}".\nУкажите ID поставщика (Supplier ID):`, '1');
+    const supplierIdStr = prompt(`Закупка "${record.product_name}".\nID поставщика:`, '1');
     if (!supplierIdStr) return;
-
-    const actualPriceStr = prompt('Уточните цену закупки у поставщика (₽ за единицу):', record.estimated_purchase_price.toString());
+    const actualPriceStr = prompt('Цена закупки (₽):', record.estimated_purchase_price.toString());
     if (!actualPriceStr) return;
-
-    const orderPayload = {
-      supplier_id: parseInt(supplierIdStr),
-      items: [
-        {
-          product_id: record.product_id,
-          quantity: record.recommended_qty,
-          estimated_purchase_price: parseFloat(actualPriceStr)
-        }
-      ]
-    };
 
     try {
       const response = await fetch('/api/v1/warehouse/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload)
+        body: JSON.stringify({
+          supplier_id: parseInt(supplierIdStr),
+          items: [{ product_id: record.product_id, quantity: record.recommended_qty, estimated_purchase_price: parseFloat(actualPriceStr) }]
+        })
       });
-
       if (response.ok) {
-        alert('🎉 Заказ успешно сформирован! Изъятый предзаказ переведен в статус активной поставки "В ПУТИ". Юниты рождены в СУБД со статусом EXPECTED.');
-        // Удаляем из буфера предзаказов и обновляем таблицы
-        setPreOrders(prev => prev.filter(p => p.pre_order_id !== record.pre_order_id));
-        loadOrdersData();
-      } else {
-        alert('Симуляция: Рекомендация аналитики успешно конвертирована в реальный заказ поставщику.');
-        setPreOrders(prev => prev.filter(p => p.pre_order_id !== record.pre_order_id));
+        alert('🎉 Заказ сформирован! Рекомендация переведена в статус активной поставки "В ПУТИ".');
+        syncAllData();
       }
-    } catch (error) {
-      console.error('Сетевая ошибка при конвертации заказа:', error);
-    }
+    } catch (error) { console.error(error); }
+  };
+
+  const handleExcludeProduct = async (productId: number) => {
+    try {
+      const response = await fetch('/api/v1/warehouse/pre-orders/exclude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId })
+      });
+      if (response.ok) {
+        alert('🚫 Товар успешно забанен в предзаказах!');
+        loadPreOrdersData();
+      }
+    } catch (error) { console.error(error); }
   };
 
   return (
@@ -116,41 +122,33 @@ export const OrdersTimeline: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h2 style={{ margin: 0, color: '#4fa8ff' }}>📈 ERP-Панель Управления Закупками</h2>
-          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#666' }}>Интеллектуальный контроль поставок, архивов и дефицитных рисков розницы</p>
+          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#666' }}>Интеллектуальный контроль поставок, активных правил и черных списков СУБД</p>
         </div>
         <button onClick={syncAllData} style={{ background: '#333', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-          🔄 Синхронизировать списки
+          🔄 Синхронизировать
         </button>
       </div>
 
-      {/* Атомный компонент вкладок */}
       <OrdersTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       {loading ? (
-        <div style={{ color: '#888' }}>Синхронизация списков снабжения...</div>
+        <div style={{ color: '#888' }}>Синхронизация списков...</div>
       ) : (
         <div>
-          {/* Вкладка 1: Активные */}
           {activeTab === 'active' && (
-            activeOrders.length === 0 ? (
-              <div style={{ padding: '40px', background: '#1a1a1a', borderRadius: '8px', textAlign: 'center', color: '#555' }}>Нет активных поставок в пути.</div>
-            ) : (
-              activeOrders.map(order => <TimelineCard key={order.supplier_order_id} order={order} />)
-            )
+            <OrdersListContainer orders={activeOrders} emptyMessage="Нет активных поставок в пути. Воспользуйтесь умными предзаказами." />
           )}
 
-          {/* Вкладка 2: Архив */}
           {activeTab === 'archived' && (
-            archivedOrders.length === 0 ? (
-              <div style={{ padding: '40px', background: '#1a1a1a', borderRadius: '8px', textAlign: 'center', color: '#555' }}>Архив пуст. Исполненные накладные отсутствуют.</div>
-            ) : (
-              archivedOrders.map(order => <TimelineCard key={order.supplier_order_id} order={order} />)
-            )
+            <OrdersListContainer orders={archivedOrders} emptyMessage="Архив пуст. Исполненные накладные отсутствуют." />
           )}
 
-          {/* Вкладка 3: Предзаказы */}
           {activeTab === 'preorder' && (
-            <PreOrdersTable records={preOrders} onQuickOrder={handleQuickOrder} />
+            <div>
+              <RuleCreatorBlock onRuleCreated={syncAllData} />
+              <ActiveRulesList rules={rules} />
+              <PreOrdersTable records={preOrders} onQuickOrder={handleQuickOrder} onExcludeProduct={handleExcludeProduct} />
+            </div>
           )}
         </div>
       )}
