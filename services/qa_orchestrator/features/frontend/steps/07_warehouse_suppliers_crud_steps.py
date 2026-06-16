@@ -1,13 +1,17 @@
 # services/qa_orchestrator/features/frontend/steps/07_warehouse_suppliers_crud_steps.py
 import httpx
+import uuid
 
 GATEWAY_URL = "http://gateway:80"
 
 async def run_07_warehouse_suppliers_crud_assertions() -> list[str]:
     """
     Атомарный тест-шаг: Проверка просмотра и создания поставщиков через шлюз Nginx.
+    🛡️ ИЗОЛЯЦИЯ ДАННЫХ: Использует динамический суффикс UUID для защиты от ошибок 400
+    при повторных запусках теста без очистки таблиц уникальных имён.
     """
     results = []
+    uid = uuid.uuid4().hex[:6].upper()
     browser_headers = {
         "Host": "localhost",
         "User-Agent": "Mozilla/5.0 Lightweight-CRM-QA-Robot/2026"
@@ -19,8 +23,9 @@ async def run_07_warehouse_suppliers_crud_assertions() -> list[str]:
             results.append("   ✅ Когда Менеджер переключается на вкладку 'Поставщики'")
             results.append("   ✅ Тогда Он видит таблицу со списком зарегистрированных контрагентов")
 
-            # Тестовый payload создания нового контрагента
-            supplier_payload = {"name": "Форсаж-QA"}
+            # 🔥 ИСПРАВЛЕНО: Генерируем гарантированно уникальное имя компании для защиты от Unique Constraint в СУБД
+            supplier_name = f"Форсаж-QA-{uid}"
+            supplier_payload = {"name": supplier_name}
 
             # Эмулируем отправку POST-запроса с фронтенда в шлюз
             response = await client.post("/api/v1/warehouse/suppliers", json=supplier_payload)
@@ -30,7 +35,7 @@ async def run_07_warehouse_suppliers_crud_assertions() -> list[str]:
                 results.append("   ✅ Тогда Система отправляет POST-запрос создания в ядро")
                 results.append("   ✅ И Новый поставщик успешно материализуется в таблице на фронтенде")
             else:
-                return [f"❌ Сбой API Поставщиков: POST /warehouse/suppliers вернул код {response.status_code}"]
+                return [f"❌ Сбой API Поставщиков: POST /warehouse/suppliers вернул код {response.status_code}. Текст: {response.text}"]
 
         except Exception as e:
             return [f"❌ КРИТИЧЕСКИЙ СБОЙ СЕТЕВОГО ТЕСТ-ШАГА ПОСТАВЩИКОВ: {str(e)}"]
