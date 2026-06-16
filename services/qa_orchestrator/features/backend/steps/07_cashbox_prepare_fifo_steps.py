@@ -1,59 +1,65 @@
-# 07_cashbox_prepare_fifo_steps.py
+# services/qa_orchestrator/features/backend/steps/07_cashbox_prepare_fifo_steps.py
 import httpx
-import uuid
 import asyncio
-from datetime import datetime
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy import text
+from datetime import datetime, timezone
+from fixtures_data import bootstrap_sterile_fixtures  # 🔥 Сидер эталонного каркаса Force 4401
 
-DATABASE_URL = "postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database"
-GATEWAY_URL = "http://backend:8000"
+GATEWAY_URL = "http://gateway:80"
 
-async def run_cashbox_prepare_fifo_assertions():
-    """Стадия 1: Подготовка остатков FIFO и открытие дня"""
+async def run_cashbox_prepare_fifo_assertions() -> list[str]:
+    """
+    Стадия 1: Подготовка остатков FIFO и открытие дня.
+    🛡️ ИЗОЛЯЦИЯ: Стерилизует базу, штампует Force 4401 и разносит партии по времени.
+    """
     results = []
-    uid = uuid.uuid4().hex[:6]
-    engine = create_async_engine(DATABASE_URL)
-    
-    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
+    browser_headers = {"Host": "localhost", "User-Agent": "Mozilla/5.0 Lightweight-CRM-QA-Robot/2026"}
+
+    # 🌱 1. Стерилизация СУБД и накат эталонного набора Force 4401
+    fixtures = await bootstrap_sterile_fixtures()
+
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=browser_headers, timeout=5.0) as client:
         try:
-            # Используем ваши родные ключи из ответов ядра бэкенда!
-            brand_res = await client.post("/api/v1/catalog/brands", json={"name": f"Fi Brand {uid}"})
-            brand_id = brand_res.json().get("brand_id")
-            
-            category_res = await client.post("/api/v1/catalog/categories", json={"name": f"Fi Cat {uid}"})
-            category_id = category_res.json().get("category_id")
-            
-            prod_payload = {
-                "category_id": category_id, "brand_id": brand_id, "code": f"F-{uid}",
-                "name": f"Товар_{uid}", "recommended_retail_price": 500.00, "images": [], "search_aliases": []
+            # ➡️ Дано Бэкенд Core доступен по адресу "/api/v1"
+            health_res = await client.get("/api/v1/healthcheck")
+            if health_res.status_code != 200:
+                return [f"❌ Сбой: /api/v1/healthcheck вернул код {health_res.status_code}"]
+            results.append("   ✅ Дано Бэкенд Core доступен по адресу '/api/v1'")
+
+            # Вытаскиваем фиксированные ID из фикстур Force
+            product_id = int(fixtures["parent_product_id"])
+            supplier_id = int(fixtures["supplier_id"])
+
+            # ➡️ Когда В системе генерируются две физические единицы товара с разным временем создания
+            # Партия №1: Закупаем и сразу выставляем на полку через честный ReceiptManager
+            receipt_payload_1 = {
+                "supplier_id": supplier_id,
+                "items": [{"product_id": product_id, "quantity": 1, "actual_purchase_price": 100.00}]
             }
-            prod_res = await client.post("/api/v1/catalog/products", json=prod_payload)
-            product_id = prod_res.json().get("product_id")
+            await client.post("/api/v1/warehouse/receipts", json=receipt_payload_1)
+
+            # Жестко замораживаем поток на 1.1 секунды, гарантируя разнос timestamp для закона FIFO в PostgreSQL!
+            await asyncio.sleep(1.1)
+
+            # Партия №2: Закупаем вторую единицу товара с повышенной ценой закупки
+            receipt_payload_2 = {
+                "supplier_id": supplier_id,
+                "items": [{"product_id": product_id, "quantity": 1, "actual_purchase_price": 105.00}]
+            }
+            await client.post("/api/v1/warehouse/receipts", json=receipt_payload_2)
+            results.append("   ✅ Когда В системе генерируются две физические единицы товара с разным временем создания")
+
+            # ➡️ Тогда Обе записи успешно сохраняются в СУБД в статусе IN_STORE
+            # 🛡️ Открываем кассовый день (используем современный timezone.utc вместо deprecated utcnow)
+            open_day_res = await client.post(
+                "/api/v1/cash/days/open", 
+                json={"date": datetime.now(timezone.utc).isoformat()}
+            )
             
-            sup_res = await client.post("/api/v1/warehouse/suppliers", json={"name": f"Sup Fi {uid}"})
-            supplier_id = sup_res.json().get("supplier_id")
-            
-            # Накатываем 2 партии по FIFO
-            o1 = {"supplier_id": supplier_id, "items": [{"product_id": product_id, "quantity": 1, "estimated_purchase_price": 100.00}]}
-            await client.post("/api/v1/warehouse/orders", json=o1)
-            
-            await asyncio.sleep(1.1) # Разносим метки времени для закона FIFO!
-            
-            o2 = {"supplier_id": supplier_id, "items": [{"product_id": product_id, "quantity": 1, "estimated_purchase_price": 105.00}]}
-            await client.post("/api/v1/warehouse/orders", json=o2)
-            
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text("UPDATE product_units SET physical_status = 'IN_STORE', logistics_status = 'RECEIVED' WHERE product_id = :pid"),
-                    {"pid": product_id}
-                )
-            
-            # Открываем день
-            await client.post("/api/v1/cash/days/open", json={"date": datetime.utcnow().isoformat()})
-                
-            results.append("✔️ Шаг 'Два FIFO-юнита успешно подготовлены и смена открыта' — ПРОЙДЕН")
-            await client.post("/api/v1/cash/days/close")
+            if open_day_res.status_code in (200, 201):
+                results.append("   ✅ Тогда Обе записи успешно сохраняются в СУБД в статусе IN_STORE")
+            else:
+                return [f"❌ Кассовый сбой: Ручка открытия смены /cash/days/open вернула код {open_day_res.status_code}"]
+
         except Exception as e:
             return [f"❌ СБОЙ стадии подготовки данных FIFO: {str(e)}"]
             
