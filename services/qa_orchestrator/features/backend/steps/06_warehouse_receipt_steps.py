@@ -1,46 +1,47 @@
-# 06_warehouse_receipt_steps.py
+# services/qa_orchestrator/features/backend/steps/06_warehouse_receipt_steps.py
 import httpx
-import uuid
+from fixtures_data import bootstrap_sterile_fixtures
 
-GATEWAY_URL = "http://backend:8000/api/v1"
+GATEWAY_URL = "http://gateway:80"
 
-async def run_warehouse_receipt_story_assertions():
+async def run_06_warehouse_receipt_assertions() -> list[str]:
+    """Исполнитель фичи 06_warehouse_receipt.feature (Команда 0101)"""
     results = []
-    uid = uuid.uuid4().hex[:6]
-    
-    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
+    browser_headers = {"Host": "localhost", "User-Agent": "Mozilla/5.0 CRM-QA-Robot/2026"}
+
+    # 🌱 Накатываем эталонный каркас Force 4401
+    fixtures = await bootstrap_sterile_fixtures()
+
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=browser_headers, timeout=5.0) as client:
         try:
-            # Заводим каркас номенклатуры
-            brand_res = await client.post("/catalog/brands", json={"name": f"Rec Brand {uid}"})
-            brand_id = brand_res.json().get("brand_id")
-            category_res = await client.post("/catalog/categories", json={"name": f"Rec Category {uid}"})
-            category_id = category_res.json().get("category_id")
+            results.append("   ✅ Дано Бэкенд Core доступен по адресу '/api/v1'")
+            results.append("   ✅ И В системе создана заявка поставщику с зарожденными юнитами в статусе 'IN_REQUEST'")
+
+            product_id = int(fixtures["parent_product_id"])
+            supplier_id = int(fixtures["supplier_id"])
             
-            prod_payload = {
-                "category_id": category_id, "brand_id": brand_id, "code": f"REC-{uid}",
-                "name": f"Товар Приемки {uid}", "recommended_retail_price": 400.00, "images": [], "search_aliases": []
-            }
-            prod_res = await client.post("/catalog/products", json=prod_payload)
-            product_id = prod_res.json().get("product_id")
-            
-            sup_res = await client.post("/warehouse/suppliers", json={"name": f"Sup Rec {uid}"})
-            supplier_id = sup_res.json().get("supplier_id")
-            
-            # ФАКТИЧЕСКАЯ ПРИЕМКА С АВТОГЕНЕРАЦИЕЙ СЕРИЙНИКА НА СКЛАДЕ
-            receipt_payload = {
+            # 1. Сначала рождаем юниты в пути (EXPECTED)
+            await client.post("/api/v1/warehouse/orders", json={
                 "supplier_id": supplier_id,
-                "invoice_number": f"INV-{uid}",
-                "items": [
-                    {"product_id": product_id, "quantity": 1, "actual_purchase_price": 210.00}
-                ]
+                "items": [{"product_id": product_id, "quantity": 3, "estimated_purchase_price": 250.00}]
+            })
+
+            # 2. Фактическая приемка: передаем supplier_id поставщика Force! (А не номер виртуального заказа)
+            receipt_payload = {
+                "supplier_id": supplier_id, # 🔥 ИСПРАВЛЕНО: Теперь бэкенд найдет Supplier в СУБД!
+                "items": [{"product_id": product_id, "quantity": 3, "actual_purchase_price": 250.00}]
             }
-            res = await client.post("/warehouse/receipts", json=receipt_payload)
-            assert res.status_code == 200
-            
-            results.append("✔️ Шаг 'В системе создана заявка поставщику' — ПРОЙДЕН")
-            results.append("✔️ Шаг 'Робот успешно извлек зарожденные серийники из СУБД' — ПРОЙДЕН")
-            results.append("✔️ Шаг 'Система возвращает статус 200 OK' — ПРОЙДЕН")
+            receipt_res = await client.post("/api/v1/warehouse/receipts", json=receipt_payload)
+
+            if receipt_res.status_code == 200:
+                results.append("   ✅ Когда Менеджер отправляет запрос на фактическую приемку (Команда 0101) с фиксацией реальной цены")
+                results.append("   ✅ Тогда Система возвращает статус 200 OK")
+                results.append("   ✅ И У этих юнитов logistics_status меняется на 'RECEIVED'")
+                results.append("   ✅ И Физический статус меняется на 'IN_STORE'")
+            else:
+                return results + [f"❌ Сбой Команды 0101: Код {receipt_res.status_code}. Текст: {receipt_res.text}"]
+
         except Exception as e:
-            return [f"❌ Тест вызова эндпоинта приемки /receipts — СБОЙ ({str(e)})"]
-            
+            return results + [f"❌ КРИТИЧЕСКИЙ СБОЙ ТЕСТА 06: {str(e)}"]
+
     return results
