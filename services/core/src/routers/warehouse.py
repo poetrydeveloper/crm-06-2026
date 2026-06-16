@@ -1,6 +1,6 @@
 # services/core/src/routers/warehouse.py
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
@@ -16,6 +16,7 @@ from src.components.pre_order_analyzer import PreOrderAnalyzer
 from src.components.receipt_manager import ReceiptManager
 from src.components.disassembly_manager import DisassemblyManager
 from src.components.absorption_manager import AbsorptionManager
+from src.components.rule_engine import RuleEngine  # Добавлен новый компонент
 
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
 
@@ -42,6 +43,16 @@ class DisassemblyPartialPayload(BaseModel):
 class SetAbsorptionPayload(BaseModel):
     parent_product_id: int = Field(..., description="ID карточки собираемого набора")
     satellite_unit_ids: List[int] = Field(..., description="Список ID физических юнитов-сателлитов")
+
+# 🔥 Новые Pydantic-модели конструктора условий автозаказа
+class RuleCreatePayload(BaseModel):
+    price_operator: str = Field(..., description="Математический оператор '>' или '<'")
+    price_value: float = Field(..., ge=0, description="Пороговая стоимость товара")
+    name_contains: Optional[str] = Field(None, description="Поиск по подстроке в названии, например 'бита'")
+    stock_threshold: int = Field(..., ge=0, description="Порог критического остатка")
+
+class ExceptionCreatePayload(BaseModel):
+    product_id: int = Field(..., description="ID товара, который кассир пометил галочкой исключения")
 
 @router.post("/suppliers", status_code=201)
 async def create_supplier(payload: SupplierCreate, db: AsyncSession = Depends(get_db)):
@@ -87,3 +98,20 @@ async def process_partial_disassembly(payload: DisassemblyPartialPayload, db: As
 @router.post("/sets/absorb", status_code=200)
 async def process_set_absorption(payload: SetAbsorptionPayload, db: AsyncSession = Depends(get_db)):
     return await AbsorptionManager.execute_set_absorption(payload.parent_product_id, payload.satellite_unit_ids, db)
+
+# 🔥 Новые ERP-ручки для интеллектуального конструктора снабжения
+
+@router.get("/purchase-rules", status_code=200)
+async def get_all_dynamic_purchase_rules():
+    """📋 Получение списка всех тегов-правил автозаказа"""
+    return await RuleEngine.get_rules()
+
+@router.post("/purchase-rules", status_code=201)
+async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: AsyncSession = Depends(get_db)):
+    """🛠️ Добавление нового правила из тегов в конструктор"""
+    return await RuleEngine.add_rule(payload, db)
+
+@router.post("/pre-orders/exclude", status_code=200)
+async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload):
+    """🚫 Помещение товара в черный список исключений 'Больше не находить'"""
+    return await RuleEngine.add_exception(payload.product_id)
