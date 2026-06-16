@@ -1,88 +1,72 @@
-# catalog_steps.py
+# services/qa_orchestrator/features/backend/steps/01_catalog_steps.py
 import httpx
 import uuid
+from fixtures_data import bootstrap_sterile_fixtures  # 🔥 Сидер эталонного каркаса Force 4401
 
-# Тестовый робот идет напрямую к бэкенду ядра по внутренней Docker-сети
-CORE_DIRECT_URL = "http://backend:8000/api/v1"
+GATEWAY_URL = "http://gateway:80"
 
-async def run_catalog_story_assertions():
-    """Функция-исполнитель, которая прогоняет сквозной сценарий по шагам"""
+async def run_01_catalog_assertions() -> list[str]:
+    """
+    Исполнитель фичи 01_catalog.feature.
+    🛡️ ИЗОЛЯЦИЯ: Перед стартом стерилизует СУБД и штампует эталонный набор Force 4401.
+    """
     results = []
-    uid = uuid.uuid4().hex[:6]
-    
-    async with httpx.AsyncClient(base_url=CORE_DIRECT_URL, timeout=5.0) as client:
-        
-        # Шаг 1: Дано Бэкенд Core доступен
-        try:
-            res = await client.get("/healthcheck")
-            assert res.status_code == 200
-            results.append("✔️ Шаг 'Дано Бэкенд Core доступен' — ПРОЙДЕН")
-        except Exception as e:
-            return [f"❌ Шаг 'Дано Бэкенд Core доступен' — СБОЙ ({str(e)})"]
+    uid = uuid.uuid4().hex[:6].upper()
+    browser_headers = {"Host": "localhost", "User-Agent": "Mozilla/5.0 CRM-QA-Robot/2026"}
 
-        # Шаг 2: Когда Пользователь создает поставщика
-        try:
-            sup_data = {"name": f"QA_Форсаж_{uid}", "contact_info": "test"}
-            res = await client.post("/warehouse/suppliers", json=sup_data)
-            assert res.status_code == 201
-            results.append("✔️ Шаг 'Когда Пользователь создает поставщика' — ПРОЙДЕН")
-        except Exception as e:
-            return results + [f"❌ Шаг 'Когда Пользователь создает поставщика' — СБОЙ ({str(e)})"]
+    # 🌱 1. Стерилизация и накат эталонной номенклатуры (Смена/Касса/FIFO защищены)
+    fixtures = await bootstrap_sterile_fixtures()
 
-        # Шаг 2.1: Создание дефотного Бренда (Трансформируется в snake_case)
-        created_brand_id = None
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=browser_headers, timeout=5.0) as client:
         try:
-            brand_data = {"name": f"QA Toptul {uid}"}
-            res = await client.post("/catalog/brands", json=brand_data)
-            assert res.status_code == 201
-            created_brand_id = res.json().get("brand_id")
-            results.append("✔️ Шаг 'Подготовка: Дефолтный бренд создан' — ПРОЙДЕН")
-        except Exception as e:
-            return results + [f"❌ Шаг 'Подготовка: Создание бренда' — СБОЙ ({str(e)})"]
+            # ➡️ Дано Бэкенд Core доступен через шлюз Nginx
+            health_res = await client.get("/api/v1/healthcheck")
+            if health_res.status_code == 200:
+                results.append("   ✅ Дано Бэкенд Core доступен через шлюз Nginx")
+            else:
+                return [f"❌ Сбой: /api/v1/healthcheck вернул код {health_res.status_code}"]
 
-        # Шаг 2.2: Создание дефолтной Категории (Трансформируется в snake_case)
-        created_category_id = None
-        try:
-            category_data = {"name": f"QA Ключи {uid}", "parent_id": None}
-            res = await client.post("/catalog/categories", json=category_data)
-            assert res.status_code == 201
-            created_category_id = res.json().get("category_id")
-            results.append("✔️ Шаг 'Подготовка: Дефолтная категория создана' — ПРОЙДЕН")
-        except Exception as e:
-            return results + [f"❌ Шаг 'Подготовка: Создание категории' — СБОЙ ({str(e)})"]
+            # ➡️ Когда Пользователь создает поставщика с именем "QA_Форсаж_Тест"
+            sup_payload = {"name": f"QA_Форсаж_Тест_{uid}", "contact_info": "Тестовый оптовик"}
+            sup_res = await client.post("/api/v1/warehouse/suppliers", json=sup_payload)
+            if sup_res.status_code == 201:
+                results.append("   ✅ Когда Пользователь создает поставщика с именем 'QA_Форсаж_Тест'")
+            else:
+                return results + [f"❌ Сбой создания поставщика: Код {sup_res.status_code}"]
 
-        # Шаг 3: И Создает товар (Передаем ОБЯЗАТЕЛЬНЫЙ brand_id и массив images)
-        try:
+            # ➡️ И Пользователь отправляет запрос на создание товара с именем "Ключ рожковый 10мм Toptul"
             prod_payload = {
-                "category_id": created_category_id,
-                "brand_id": created_brand_id,
-                "code": f"QA-{uid}",
-                "name": "Ключ рожковый 10мм Toptul",
-                "description": "Тест",
-                "recommended_retail_price": 500.00,
-                "search_aliases": ["ск 10"],
-                "images": ["/static/products/key10_main.jpg", "https://external-storage.com"]
+                "category_id": int(fixtures["category_id"]),
+                "brand_id": int(fixtures["brand_id"]),
+                "code": f"QA-KL-10-{uid}",
+                "name": "Ключ рожковый 10мм Toptul и насадка", # Добавили "и" для проверки фильтра предлогов
+                "description": "Автоматическое тестирование лексического парсера",
+                "recommended_retail_price": 500.0,
+                "images": ["/static/products/key10.jpg"]
             }
-            res = await client.post("/catalog/products", json=prod_payload)
+            prod_res = await client.post("/api/v1/catalog/products", json=prod_payload)
+
+            # ➡️ Тогда Система возвращает статус 201
+            if prod_res.status_code == 201:
+                results.append("   ✅ Тогда Система возвращает статус 201")
+            else:
+                return results + [f"❌ Сбой создания товара: Код {prod_res.status_code}. Текст: {prod_res.text}"]
+
+            # Извлекаем автоматически сгенерированные поисковые теги из ответа ядра СУБД
+            generated_tags = prod_res.json().get("generated_tags", [])
             
-            # Шаг 4: Тогда Система возвращает статус 201
-            if res.status_code != 201:
-                raise Exception(f"Бэкенд вернул статус {res.status_code}: {res.text}")
-            results.append("✔️ Шаг 'Тогда Система возвращает статус 201' — ПРОЙДЕН")
-            
-            generated_tags = res.json().get("generated_tags", [])
-            
-            # Шаг 5: И В тегах присутствуют нужные слова
+            # ➡️ И В сгенерированных тегах присутствуют слова "ключ", "рожковый", "10мм", "qa-кл-10"
             assert "ключ" in generated_tags
             assert "рожковый" in generated_tags
             assert "10мм" in generated_tags
-            results.append("✔️ Шаг 'И В тегах присутствуют ключевые слова' — ПРОЙДЕН")
-            
-            # Шаг 6: И В тегах отсутствует предлог из 1 буквы
+            assert f"qa-kl-10-{uid}".lower() in generated_tags
+            results.append("   ✅ И В сгенерированных тегах присутствуют слова 'ключ', 'рожковый', '10мм'")
+
+            # ➡️ И В тегах отсутствует предлог "и"
             assert "и" not in generated_tags
-            results.append("✔️ Шаг 'И В тегах отсутствует предлог' — ПРОЙДЕН")
-            
+            results.append("   ✅ И В тегах отсутствует предлог 'и'")
+
         except Exception as e:
-            results.append(f"❌ Сбой на этапе работы с товаром ({str(e)})")
-            
+            return results + [f"❌ КРИТИЧЕСКИЙ СБОЙ ТЕСТА КАТАЛОГА: {str(e)}"]
+
     return results
