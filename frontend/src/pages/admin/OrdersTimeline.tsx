@@ -82,25 +82,36 @@ export const OrdersTimeline: React.FC = () => {
   useEffect(() => { syncAllData(); }, []);
 
   const handleQuickOrder = async (record: PreOrderRecord) => {
-    const supplierIdStr = prompt(`Закупка "${record.product_name}".\nID поставщика:`, '1');
-    if (!supplierIdStr) return;
-    const actualPriceStr = prompt('Цена закупки (₽):', record.estimated_purchase_price.toString());
-    if (!actualPriceStr) return;
-
     try {
-      const response = await fetch('/api/v1/warehouse/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          supplier_id: parseInt(supplierIdStr),
-          items: [{ product_id: record.product_id, quantity: record.recommended_qty, estimated_purchase_price: parseFloat(actualPriceStr) }]
-        })
-      });
-      if (response.ok) {
-        alert('🎉 Заказ сформирован! Рекомендация переведена в статус активной поставки "В ПУТИ".');
-        syncAllData();
+      // 1. Считываем текущее состояние корзины из localStorage
+      const currentCartRaw = localStorage.getItem('purchase_cart');
+      const cartList = currentCartRaw ? JSON.parse(currentCartRaw) : [];
+
+      // 2. Проверяем, нет ли уже этого товара в корзине, чтобы не дублировать строки
+      const existingItemIdx = cartList.findIndex((item: any) => item.product_id === record.product_id);
+      
+      if (existingItemIdx > -1) {
+        cartList[existingItemIdx].quantity += record.recommended_qty;
+      } else {
+        cartList.push({
+          product_id: record.product_id,
+          product_name: record.product_name,
+          product_code: record.product_code,
+          quantity: record.recommended_qty,
+          estimated_purchase_price: record.estimated_purchase_price
+        });
       }
-    } catch (error) { console.error(error); }
+
+      // 3. Сохраняем обновленный список обратно в буфер браузера
+      localStorage.setItem('purchase_cart', JSON.stringify(cartList));
+      
+      alert(`🛒 Товар "${record.product_name}" (в количестве ${record.recommended_qty} шт.) успешно добавлен в корзину формирования общей заявки!\n\nПерейдите на вкладку "📦 Склад логистики" -> "Создать заявку", чтобы отправить заказ поставщику.`);
+      
+      // Исключаем позицию из текущего экрана предзаказов, чтобы визуально очистить витрину рисков
+      setPreOrders(prev => prev.filter(p => p.pre_order_id !== record.pre_order_id));
+    } catch (error) {
+      console.error('Ошибка добавления товара в корзину снабжения:', error);
+    }
   };
 
   const handleExcludeProduct = async (productId: number) => {

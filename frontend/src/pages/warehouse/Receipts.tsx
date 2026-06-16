@@ -16,6 +16,7 @@ export const Receipts: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [cartCount, setCartCount] = useState(0); // 🔥 Счетчик отложенных позиций
 
   const loadActiveOrders = async () => {
     try {
@@ -23,7 +24,10 @@ export const Receipts: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         const ordersArray = Array.isArray(data) ? data : (data.orders || data.data || []);
-        setOrders(ordersArray.map((o: any) => ({
+        // Вчерашний сплиттер возвращает плоские списки
+        const rawActive = Array.isArray(data.active) ? data.active : ordersArray;
+        
+        setOrders(rawActive.map((o: any) => ({
           ...o,
           items: o.items || [{ product_id: 101, product_name: 'Ключ рожковый 10мм Toptul', product_code: 'КЛ-10-ТП', quantity: 5, estimated_purchase_price: 250.00 }]
         })).filter((o: SupplierOrder) => o.status !== 'CLOSED'));
@@ -41,13 +45,33 @@ export const Receipts: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
+  // 🔥 Проверка накопленной корзины предзаказов
+  const checkPurchaseCart = () => {
+    try {
+      const cartRaw = localStorage.getItem('purchase_cart');
+      if (cartRaw) {
+        const cartList = JSON.parse(cartRaw);
+        setCartCount(cartList.length);
+      } else {
+        setCartCount(0);
+      }
+    } catch (e) { setCartCount(0); }
+  };
+
   const reloadAll = async () => {
     setLoading(true);
     await Promise.all([loadActiveOrders(), loadSuppliers()]);
+    checkPurchaseCart();
     setLoading(false);
   };
 
   useEffect(() => { reloadAll(); }, []);
+
+  // Дополнительно проверяем буфер при открытии модального окна
+  const handleOpenOrderModal = () => {
+    checkPurchaseCart();
+    setIsModalOpen(true);
+  };
 
   const handleCreateSupplier = async () => {
     const name = prompt('Введите наименование нового поставщика:');
@@ -69,7 +93,7 @@ export const Receipts: React.FC = () => {
       await fetch('/api/v1/warehouse/receipts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice_number: inv, supplier_order_id: orderId, items: [{ product_id: productId, actual_quantity: 1 }] })
+        body: JSON.stringify({ invoice_number: inv, supplier_id: orderId, items: [{ product_id: productId, quantity: 1, actual_purchase_price: 250.0 }] })
       });
       alert('🎉 Товар успешно принят!');
       loadActiveOrders();
@@ -78,17 +102,37 @@ export const Receipts: React.FC = () => {
 
   return (
     <div style={{ padding: '20px', background: '#121212', color: '#fff', minHeight: 'calc(100vh - 60px)' }}>
-      <WarehouseTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* Кнопка быстрого вызова с индикатором накопительного буфера */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <WarehouseTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        {activeTab === 'receipts' && (
+          <button 
+            onClick={handleOpenOrderModal}
+            style={{ 
+              background: cartCount > 0 ? '#ffb74d' : '#2ea44f', 
+              color: cartCount > 0 ? '#000' : '#fff',
+              border: 'none', padding: '10px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' 
+            }}
+          >
+            ➕ Создать новую заявку {cartCount > 0 && `(🛒 В корзине: ${cartCount})`}
+          </button>
+        )}
+      </div>
       
       {loading ? (
         <div style={{ color: '#888' }}>Загрузка данных...</div>
       ) : activeTab === 'receipts' ? (
-        <ReceiptsTable orders={orders} expandedOrderId={expandedOrderId} onToggleRow={(id) => setExpandedOrderId(prev => prev === id ? null : id)} onConfirmReceipt={handleConfirmReceipt} onOpenModal={() => setIsModalOpen(true)} />
+        <ReceiptsTable orders={orders} expandedOrderId={expandedOrderId} onToggleRow={(id) => setExpandedOrderId(prev => prev === id ? null : id)} onConfirmReceipt={handleConfirmReceipt} onOpenModal={handleOpenOrderModal} />
       ) : (
         <SuppliersTable suppliers={suppliers} onCreateSupplier={handleCreateSupplier} />
       )}
 
-      {isModalOpen && <OrderModal onClose={() => setIsModalOpen(false)} onOrderCreated={loadActiveOrders} />}
+      {isModalOpen && (
+        <OrderModal 
+          onClose={() => { setIsModalOpen(false); checkPurchaseCart(); }} 
+          onOrderCreated={() => { loadActiveOrders(); checkPurchaseCart(); }} 
+        />
+      )}
     </div>
   );
 };
