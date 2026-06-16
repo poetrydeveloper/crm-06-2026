@@ -52,6 +52,7 @@ export const Header: React.FC = () => {
         <button onClick={() => navigateTo('/admin/orders')} style={linkStyle('/admin/orders')}>📈 Логистика (Админ)</button>
         <button onClick={() => navigateTo('/admin/unit-map')} style={linkStyle('/admin/unit-map')}>🔍 Аудит Юнитов (Админ)</button>
         <button onClick={() => navigateTo('/admin/returns')} style={linkStyle('/admin/returns')}>🔄 Возвраты (Админ)</button>
+        <button onClick={() => navigateTo('/admin/returns-log')} style={linkStyle('/admin/returns-log')}>📋 Журнал Брака (Админ)</button>
         <button onClick={() => navigateTo('/warehouse')} style={linkStyle('/warehouse')}>📦 Склад логистики</button>
       </nav>
 

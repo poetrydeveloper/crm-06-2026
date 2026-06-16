@@ -1,0 +1,13 @@
+=== СТРУКТУРА ДИРЕКТОРИЙ ===
+services/analyzer
+services/analyzer/Dockerfile
+services/analyzer/main.py
+services/analyzer/README.md
+services/analyzer/requirements.txt
+services/analyzer/src
+services/analyzer/__pycache__
+services/analyzer/__pycache__/main.cpython-311.pyc
+
+=== СОДЕРЖИМОЕ MAIN.PY ===
+
+=== СОДЕРЖИМОЕ DEFICIT_ENGINE.PY ===

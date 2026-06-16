@@ -8,6 +8,7 @@ import { CashDays } from './pages/admin/CashDays';
 import { OrdersTimeline } from './pages/admin/OrdersTimeline';
 import { UnitMap } from './pages/admin/UnitMap';
 import { Returns } from './pages/cashbox/Returns';
+import { ReturnsLog } from './pages/admin/ReturnsLog';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -38,6 +39,13 @@ export default function App() {
     }
     if (currentPath === '/admin/returns') {
       return <Returns />;
+    }
+    if (currentPath === '/admin/returns') {
+      return <Returns />;
+    }
+    // 🔥 НОВЫЙ SPA-РОУТ ДЛЯ ЖУРНАЛА ДИРЕКТОРА
+    if (currentPath === '/admin/returns-log') {
+      return <ReturnsLog />;
     }
     if (currentPath.startsWith('/warehouse')) {
       return <Receipts />;
