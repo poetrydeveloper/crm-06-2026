@@ -12,11 +12,10 @@ from src.schemas.warehouse import CreateSupplierOrder, SupplierOrderResponse
 # 🔥 Чистые атомарные импорты из папки компонентов
 from src.components.order_manager import OrderManager
 from src.components.order_splitter import OrderSplitter       
-from src.components.pre_order_analyzer import PreOrderAnalyzer
+from src.components.analyzer_cache_manager import AnalyzerCacheManager # 🔥 НОВЫЙ ИЗОЛИРОВАННЫЙ КЭШ-КОМПОНЕНТ
 from src.components.receipt_manager import ReceiptManager
 from src.components.disassembly_manager import DisassemblyManager
 from src.components.absorption_manager import AbsorptionManager
-from src.components.rule_engine import RuleEngine  # Добавлен новый компонент
 
 router = APIRouter(prefix="/warehouse", tags=["Склад и Логистика Закупок"])
 
@@ -44,7 +43,6 @@ class SetAbsorptionPayload(BaseModel):
     parent_product_id: int = Field(..., description="ID карточки собираемого набора")
     satellite_unit_ids: List[int] = Field(..., description="Список ID физических юнитов-сателлитов")
 
-# 🔥 Новые Pydantic-модели конструктора условий автозаказа
 class RuleCreatePayload(BaseModel):
     price_operator: str = Field(..., description="Математический оператор '>' или '<'")
     price_value: float = Field(..., ge=0, description="Пороговая стоимость товара")
@@ -75,13 +73,25 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
 
 @router.get("/orders", status_code=200)
 async def get_supplier_orders_split_list(db: AsyncSession = Depends(get_db)):
-    """🔥 Перенаправляем запрос в атомарный сплиттер активных/архивных заказов"""
     return await OrderSplitter.get_orders_split(db)
 
+# 🔥 ОБНОВЛЕНО: Отдача предзаказов теперь идет строго через кэш с флагами отказоустойчивости
 @router.get("/pre-orders", status_code=200)
 async def get_warehouse_analytics_pre_orders(db: AsyncSession = Depends(get_db)):
-    """🔥 Перенаправляем запрос в атомарный анализатор дефицитных рисков"""
-    return await PreOrderAnalyzer.get_mock_pre_orders(db)
+    """📋 Выдача кэшированных листов предзаказа фронтенду с плейсхолдер-защитой"""
+    return await AnalyzerCacheManager.get_cached_pre_orders(db)
+
+# 🔥 ДОБАВЛЕНО: Сетевой эндпоинт для заливки готовых расчетов из crm_analyzer_service
+@router.post("/pre-orders/cache-update", status_code=200)
+async def update_pre_orders_cache_from_analyzer(payload: list[dict]):
+    """📥 Приём готового расчёта дефицита от микросервиса аналитики"""
+    return await AnalyzerCacheManager.update_cache_payload(payload)
+
+# 🔥 ДОБАВЛЕНО: Отдача сырого черного списка исключений для аналитики
+@router.get("/purchase-exceptions-raw", status_code=200)
+async def get_raw_purchase_exceptions_list():
+    """🔍 Выдача черного списка забаненных товаров для crm_analyzer_service"""
+    return await AnalyzerCacheManager.get_raw_exceptions()
 
 @router.post("/receipts", status_code=200)
 async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: AsyncSession = Depends(get_db)):
@@ -99,19 +109,19 @@ async def process_partial_disassembly(payload: DisassemblyPartialPayload, db: As
 async def process_set_absorption(payload: SetAbsorptionPayload, db: AsyncSession = Depends(get_db)):
     return await AbsorptionManager.execute_set_absorption(payload.parent_product_id, payload.satellite_unit_ids, db)
 
-# 🔥 Новые ERP-ручки для интеллектуального конструктора снабжения
-
+# 🔥 ОБНОВЛЕНО: Роуты конструктора правил теперь перенаправляются в распределенный RuleEngine аналитики в будущем
+# А пока сохраняются в кэш-менеджер для обратной совместимости по тегам
 @router.get("/purchase-rules", status_code=200)
 async def get_all_dynamic_purchase_rules():
-    """📋 Получение списка всех тегов-правил автозаказа"""
+    from src.components.rule_engine import RuleEngine
     return await RuleEngine.get_rules()
 
 @router.post("/purchase-rules", status_code=201)
 async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: AsyncSession = Depends(get_db)):
-    """🛠️ Добавление нового правила из тегов в конструктор"""
+    from src.components.rule_engine import RuleEngine
     return await RuleEngine.add_rule(payload, db)
 
 @router.post("/pre-orders/exclude", status_code=200)
 async def exclude_product_from_pre_orders(payload: ExceptionCreatePayload):
-    """🚫 Помещение товара в черный список исключений 'Больше не находить'"""
-    return await RuleEngine.add_exception(payload.product_id)
+    """🚫 Перенаправление галочки 'Больше не находить' в AnalyzerCacheManager"""
+    return await AnalyzerCacheManager.add_to_blacklist(payload.product_id)
