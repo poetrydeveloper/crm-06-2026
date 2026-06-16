@@ -5,29 +5,12 @@ import { PreOrdersTable } from '../../components/atomic/PreOrdersTable';
 import { RuleCreatorBlock } from '../../components/atomic/RuleCreatorBlock';
 import { ActiveRulesList } from '../../components/atomic/ActiveRulesList';
 import { OrdersListContainer } from '../../components/atomic/OrdersListContainer';
+import { AnalyticsFallbackPlaceholder } from '../../components/atomic/AnalyticsFallbackPlaceholder'; // 🔥 Новой импорт
 import type { PreOrderRecord } from '../../components/atomic/PreOrdersTable';
 
-interface OrderItem {
-  product_name: string;
-  quantity: number;
-}
-
-interface TimelineOrder {
-  supplier_order_id: number;
-  supplier_name: string;
-  total_financial_load: number;
-  status: string;
-  items?: OrderItem[];
-}
-
-interface RuleRecord {
-  id: number;
-  price_operator: string;
-  price_value: number;
-  name_contains: string | null;
-  stock_threshold: number;
-}
-
+interface OrderItem { product_name: string; quantity: number; }
+interface TimelineOrder { supplier_order_id: number; supplier_name: string; total_financial_load: number; status: string; items?: OrderItem[]; }
+interface RuleRecord { id: number; price_operator: string; price_value: number; name_contains: string | null; stock_threshold: number; }
 type TabType = 'active' | 'archived' | 'preorder';
 
 export const OrdersTimeline: React.FC = () => {
@@ -37,6 +20,7 @@ export const OrdersTimeline: React.FC = () => {
   const [preOrders, setPreOrders] = useState<PreOrderRecord[]>([]);
   const [rules, setRules] = useState<RuleRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFallbackActive, setIsFallbackActive] = useState(false); // 🔥 Флаг аварийного плейсхолдера
 
   const loadOrdersData = async () => {
     try {
@@ -57,8 +41,11 @@ export const OrdersTimeline: React.FC = () => {
     try {
       const response = await fetch('/api/v1/warehouse/pre-orders');
       if (response.ok) {
-        const data = await response.json();
-        setPreOrders(Array.isArray(data) ? data : []);
+        const resBody = await response.json();
+        // 🔥 Считываем распределенную структуру кэш-менеджера ядра
+        setIsFallbackActive(!!resBody.fallback_active);
+        const dataArray = Array.isArray(resBody.data) ? resBody.data : (Array.isArray(resBody) ? resBody : []);
+        setPreOrders(dataArray);
       }
     } catch (error) { console.error(error); }
   };
@@ -83,35 +70,23 @@ export const OrdersTimeline: React.FC = () => {
 
   const handleQuickOrder = async (record: PreOrderRecord) => {
     try {
-      // 1. Считываем текущее состояние корзины из localStorage
       const currentCartRaw = localStorage.getItem('purchase_cart');
       const cartList = currentCartRaw ? JSON.parse(currentCartRaw) : [];
-
-      // 2. Проверяем, нет ли уже этого товара в корзине, чтобы не дублировать строки
       const existingItemIdx = cartList.findIndex((item: any) => item.product_id === record.product_id);
       
       if (existingItemIdx > -1) {
         cartList[existingItemIdx].quantity += record.recommended_qty;
       } else {
         cartList.push({
-          product_id: record.product_id,
-          product_name: record.product_name,
-          product_code: record.product_code,
-          quantity: record.recommended_qty,
-          estimated_purchase_price: record.estimated_purchase_price
+          product_id: record.product_id, product_name: record.product_name, product_code: record.product_code,
+          quantity: record.recommended_qty, estimated_purchase_price: record.estimated_purchase_price
         });
       }
 
-      // 3. Сохраняем обновленный список обратно в буфер браузера
       localStorage.setItem('purchase_cart', JSON.stringify(cartList));
-      
-      alert(`🛒 Товар "${record.product_name}" (в количестве ${record.recommended_qty} шт.) успешно добавлен в корзину формирования общей заявки!\n\nПерейдите на вкладку "📦 Склад логистики" -> "Создать заявку", чтобы отправить заказ поставщику.`);
-      
-      // Исключаем позицию из текущего экрана предзаказов, чтобы визуально очистить витрину рисков
+      alert(`🛒 Товар "${record.product_name}" добавлен в корзину снабжения.`);
       setPreOrders(prev => prev.filter(p => p.pre_order_id !== record.pre_order_id));
-    } catch (error) {
-      console.error('Ошибка добавления товара в корзину снабжения:', error);
-    }
+    } catch (error) { console.error(error); }
   };
 
   const handleExcludeProduct = async (productId: number) => {
@@ -147,18 +122,24 @@ export const OrdersTimeline: React.FC = () => {
       ) : (
         <div>
           {activeTab === 'active' && (
-            <OrdersListContainer orders={activeOrders} emptyMessage="Нет активных поставок в пути. Воспользуйтесь умными предзаказами." />
+            <OrdersListContainer orders={activeOrders} emptyMessage="Нет active поставок в пути." />
           )}
 
           {activeTab === 'archived' && (
-            <OrdersListContainer orders={archivedOrders} emptyMessage="Архив пуст. Исполненные накладные отсутствуют." />
+            <OrdersListContainer orders={archivedOrders} emptyMessage="Архив пуст." />
           )}
 
           {activeTab === 'preorder' && (
             <div>
               <RuleCreatorBlock onRuleCreated={syncAllData} />
               <ActiveRulesList rules={rules} />
-              <PreOrdersTable records={preOrders} onQuickOrder={handleQuickOrder} onExcludeProduct={handleExcludeProduct} />
+              
+              {/* 🔥 УМНАЯ ЗАЩИТА: Рендерим плейсхолдер, если аналитика упала, иначе — таблицу рисков */}
+              {isFallbackActive ? (
+                <AnalyticsFallbackPlaceholder />
+              ) : (
+                <PreOrdersTable records={preOrders} onQuickOrder={handleQuickOrder} onExcludeProduct={handleExcludeProduct} />
+              )}
             </div>
           )}
         </div>
