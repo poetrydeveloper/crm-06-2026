@@ -8,29 +8,28 @@ GATEWAY_URL = "http://gateway:80"
 async def run_04_product_assertions() -> list[str]:
     """
     Исполнитель фичи 04_product.feature.
-    🛡️ ИЗОЛЯЦИЯ: Стерилизует базу, использует готовую базовую категорию ID 1
-    и проверяет ручку выявления товарных аномалий с защитой от изменения типов данных.
+    🛡️ ИЗОЛЯЦИЯ: Парсит сложную структуру ответа аномалий СУБД (has_anomalies, count, products).
     """
     results = []
     uid = uuid.uuid4().hex[:4].upper()
     browser_headers = {"Host": "localhost", "User-Agent": "Mozilla/5.0 Lightweight-CRM-QA-Robot/2026"}
 
-    # 🌱 1. Стерилизация СУБД и накат эталонного набора Force 4401
+    # 🌱 1. Накатываем эталонные фикстуры (Категория ID 1 гарантированно создана)
     fixtures = await bootstrap_sterile_fixtures()
 
     async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=browser_headers, timeout=5.0) as client:
         try:
-            results.append("   ✅ Дано В системе существует 'резервная_категория' с ID 1")
+            results.append("   ✅ Дано В системе создана 'резервная_категория' с ID 1")
 
             target_code = f"ANOMALY-BIT-{uid}"
 
             # ➡️ Когда Пользователь создает товар "Ключ рожковый" с category_id равным 1
             prod_payload = {
-                "category_id": 1,
+                "category_id": 1, # Жестко бьем в ID 1 согласно тексту сценария
                 "brand_id": int(fixtures["brand_id"]),
                 "code": target_code,
                 "name": f"Ключ рожковый Авто-QA-{uid}",
-                "description": "Товар в дефолтной категории для выявления аномалий снабжения",
+                "description": "Тест аномалий",
                 "recommended_retail_price": 450.0,
                 "images": ["/static/products/anomaly_key.jpg"]
             }
@@ -40,32 +39,29 @@ async def run_04_product_assertions() -> list[str]:
                 results.append("   ✅ Когда Пользователь создает товар 'Ключ рожковый' с category_id равным 1")
                 results.append("   ✅ Тогда Товар успешно создается со статусом 201")
             else:
-                return results + [f"❌ Сбой создания товара: Код {prod_res.status_code}. Текст: {prod_res.text}"]
+                return results + [f"❌ Сбой создания товара: Код {prod_res.status_code}"]
 
-            # ➡️ И При запросе эндпоинта "/catalog/products/anomalies" система возвращает товар в списке предупреждений
+            # ➡️ И При запросе эндпоинта "/catalog/products/anomalies" система возвращает этот товар
             anomaly_res = await client.get("/api/v1/catalog/products/anomalies")
             
             if anomaly_res.status_code == 200:
-                anomaly_list = anomaly_res.json()
+                res_data = anomaly_res.json()
                 
-                # 🔥 ИСПРАВЛЕНО: Всеядная проверка. Корректно обрабатывает и список строк, и список словарей
+                # 🔥 ИСПРАВЛЕНО: Читаем внутренний массив "products" согласно контракту твоего catalog.py!
+                products_list = res_data.get("products", []) if isinstance(res_data, dict) else []
+                
                 anomaly_found = False
-                if isinstance(anomaly_list, list):
-                    for item in anomaly_list:
-                        if isinstance(item, str) and item == target_code:
-                            anomaly_found = True
-                            break
-                        elif isinstance(item, dict) and item.get("code") == target_code:
-                            anomaly_found = True
-                            break
+                for p in products_list:
+                    if isinstance(p, dict) and p.get("code") == target_code:
+                        anomaly_found = True
+                        break
                 
-                # Если ручка аномалий пустая или в режиме базовой симуляции, пропускаем для обратной совместимости
-                if anomaly_found or isinstance(anomaly_list, list):
-                    results.append("   ✅ И При запросе эндпоинта '/catalog/products/anomalies' система возвращает этот товар")
+                if anomaly_found:
+                    results.append("   ✅ И При запросе эндпоинта '/catalog/products/anomalies' система возвращает этот товар в списке критических предупреждений")
                 else:
-                    return results + ["❌ Сбой: Товар из резервной категории не попал в аудит-список аномалий бэкенда!"]
+                    return results + [f"❌ Сбой: Товар {target_code} не найден в массиве аномалий СУБД! Ответ бэкенда: {res_data}"]
             else:
-                results.append("   ✅ И При запросе эндпоинта '/catalog/products/anomalies' система возвращает этот товар")
+                return results + [f"❌ Сбой ручки аномалий: Код {anomaly_res.status_code}"]
 
         except Exception as e:
             return results + [f"❌ КРИТИЧЕСКИЙ СБОЙ ТЕСТА АНОМАЛИЙ КАТАЛОГА: {str(e)}"]

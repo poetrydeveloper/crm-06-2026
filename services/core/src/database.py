@@ -4,6 +4,7 @@ import sys
 import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from fastapi import Request
 
 # 1. Получаем URL базы данных из переменных окружения
 DATABASE_URL = os.getenv(
@@ -30,26 +31,44 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # 4. Функция-генератор с расширенной системой отчетов о транзакциях кассы и каталога
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Зависимость для предоставления сессии БД с логированием коммитов и откатов"""
+async def get_db(request: Request = None) -> AsyncGenerator[AsyncSession, None]:
+    """Зависимость для предоставления сессии БД с умным разделением по шагам BDD-тестов"""
+    
+    # 🔍 Вытаскиваем заголовки трассировки, которые прислал нам оркестратор тестов
+    story_name = "ЖИВОЙ ПОЛЬЗОВАТЕЛЬ (БРАУЗЕР)"
+    step_name = "РУЧНОЙ КЛИК"
+    
+    if request:
+        story_name = request.headers.get("X-QA-Story", story_name)
+        step_name = request.headers.get("X-QA-Step", step_name)
+
     async with AsyncSessionLocal() as session:
         session_id = id(session)
-        print(f"🔹 [БАЗА ДАННЫХ] Открыта новая асинхронная сессия #{session_id}", flush=True)
+        
+        # 🔥 ВИЗУАЛЬНЫЙ АНКОР: Печатаем жирный маркер шага прямо перед SQL-запросами!
+        print(f"\n==========================================================================", flush=True)
+        print(f"🎬 [BDD ТЕСТ]: {story_name.upper()}", flush=True)
+        print(f"👉 [ШАГ ТЕСТА]: {step_name}", flush=True)
+        print(f"🔹 [БАЗА ДАННЫХ] Открыта асинхронная сессия #{session_id}", flush=True)
+        print(f"--------------------------------------------------------------------------", flush=True)
+        
         try:
             yield session
             
-            print(f"⏳ [БАЗА ДАННЫХ] Эндпоинт отработал успешно. Применяем коммит для сессии #{session_id}...", flush=True)
+            print(f"⏳ [СУБД] Эндпоинт отработал успешно. Применяем коммит для сессии #{session_id}...", flush=True)
             await session.commit() 
-            print(f"✅ [БАЗА ДАННЫХ] Транзакция сессии #{session_id} успешно зафиксирована in СУБД.", flush=True)
+            print(f"✅ [СУБД] Транзакция сессии #{session_id} успешно зафиксирована.", flush=True)
             
         except Exception as e:
-            print(f"🚨 [КРИТИЧЕСКИЙ СБОЙ БАЗЫ ДАННЫХ] Ошибка в сессии #{session_id}!", file=sys.stderr, flush=True)
-            print(f"🚨 [ДЕТАЛИ ИСКЛЮЧЕНИЯ]: {str(e)}", file=sys.stderr, flush=True)
-            print(f"⏪ [БАЗА ДАННЫХ] Запускаем принудительный откат (ROLLBACK) для сессии #{session_id}...", file=sys.stderr, flush=True)
+            print(f"🚨 [КРИТИЧЕСКИЙ СБОЙ] Ошибка в сессии #{session_id}!", file=sys.stderr, flush=True)
+            print(f"🚨 [ДЕТАЛИ]: {str(e)}", file=sys.stderr, flush=True)
+            print(f"⏪ [СУБД] Запускаем принудительный откат (ROLLBACK) для сессии #{session_id}...", file=sys.stderr, flush=True)
             await session.rollback() 
-            print(f"🛑 [БАЗА ДАННЫХ] Откат сессии #{session_id} завершен. Данные в безопасности.", file=sys.stderr, flush=True)
             raise
-
+        finally:
+            print(f"==========================================================================\n", flush=True)
+            await session.close()
+            
 # 🔥 5. АВТОНОМНЫЙ ИЗОЛИРОВАННЫЙ ТРИГГЕР ИНИЦИАЛИЗАЦИИ ТАБЛИЦ (БЕЗ ДЕСТРУКТИВНЫХ СБОЕВ)
 def init_db_tables_at_import():
     """Принудительно создает таблицы purchase_rules и purchase_exceptions при чтении файла Python"""

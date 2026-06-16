@@ -1,0 +1,150 @@
+=== КОД RECEIPTS ROUTER ===
+async def process_supplier_invoice_receipt(payload: SupplierInvoiceReceipt, db: AsyncSession = Depends(get_db)):
+    return await ReceiptManager.process_receipt(payload.supplier_id, payload.items, db)
+
+@router.post("/disassembly/templated", status_code=200)
+async def process_templated_disassembly(payload: DisassemblyTemplatedPayload, db: AsyncSession = Depends(get_db)):
+    return await DisassemblyManager.execute_templated_disassembly(payload.unique_serial_number, db)
+
+@router.post("/disassembly/partial", status_code=200)
+async def process_partial_disassembly(payload: DisassemblyPartialPayload, db: AsyncSession = Depends(get_db)):
+    return await DisassemblyManager.execute_partial_disassembly(payload.unique_serial_number, payload.child_product_id, db)
+
+@router.post("/sets/absorb", status_code=200)
+async def process_set_absorption(payload: SetAbsorptionPayload, db: AsyncSession = Depends(get_db)):
+    return await AbsorptionManager.execute_set_absorption(payload.parent_product_id, payload.satellite_unit_ids, db)
+
+@router.get("/purchase-rules", status_code=200)
+async def get_all_dynamic_purchase_rules(db: AsyncSession = Depends(get_db)):
+    """📋 Получение списка всех тегов-правил автозаказа напрямую из СУБД PostgreSQL"""
+    from src.components.rule_engine import RuleEngine
+    return await RuleEngine.get_rules(db) 
+
+
+=== КОД RECEIPT_MANAGER.PY ===
+# services/core/src/components/receipt_manager.py
+import uuid
+import httpx
+from typing import List
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.models import Product, Supplier, ProductUnit, LogisticsStatus, PhysicalStatus
+
+async def send_receipt_log(supplier_name: str, accepted_count: int):
+    """Асинхронное межсервисное логирование (Код 0101)"""
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={
+                    "service": "core", 
+                    "operation_code": "0101", 
+                    "level": "INFO", 
+                    "message": f"Накладная принята. Выставлено на полку {accepted_count} единиц товара с автогенерацией уникальных номеров от поставщика {supplier_name}."
+                },
+                timeout=2.0
+            )
+        except Exception:
+            pass 
+
+class ReceiptManager:
+    @staticmethod
+    async def process_receipt(supplier_id: int, items: List, db: AsyncSession) -> dict:
+        supplier = await db.get(Supplier, supplier_id)
+        if not supplier:
+            raise HTTPException(status_code=404, detail=f"Поставщик с ID {supplier_id} не найден")
+
+        accepted_count = 0
+        
+        for item in items:
+            product = await db.get(Product, item.product_id)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Карточка товара с ID {item.product_id} не найдена")
+                
+            for _ in range(item.quantity):
+                generated_sn = f"SN-REC-{uuid.uuid4().hex[:8].upper()}"
+                new_unit = ProductUnit(
+                    product_id=item.product_id,
+                    supplier_id=supplier_id,
+                    unique_serial_number=generated_sn,
+                    purchase_price=item.actual_purchase_price,
+                    logistics_status=LogisticsStatus.RECEIVED,
+                    physical_status=PhysicalStatus.IN_STORE,
+                    is_reserved=False
+                )
+                db.add(new_unit)
+                accepted_count += 1
+
+        await db.commit()
+        await send_receipt_log(supplier.name, accepted_count)
+        
+        return {
+            "status": "success", 
+            "message": f"Успешно принято на склад, сгенерировано и выставлено на полки {accepted_count} шт. товара",
+            "supplier_name": supplier.name
+        }
+
+=== КОД ORDER_SPLITTER.PY ===
+# services/core/src/components/order_splitter.py
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.models import Product, Supplier, ProductUnit
+
+class OrderSplitter:
+    @staticmethod
+    async def get_orders_split(db: AsyncSession) -> dict:
+        """
+        Атомарная функция: агрегирует поштучные записи product_units 
+        в полноценные заказы поставщикам с разделением на Активные и Архивные.
+        """
+        # Выбираем все поштучные юниты, у которых зафиксирован поставщик, сортируем от свежих к старым
+        stmt = select(ProductUnit).where(ProductUnit.supplier_id.is_not(None)).order_by(ProductUnit.id.desc())
+        result = await db.execute(stmt)
+        units = result.scalars().all()
+
+        orders_map = {}
+        for unit in units:
+            order_id = unit.supplier_id
+            current_status = unit.physical_status.value if hasattr(unit.physical_status, "value") else str(unit.physical_status)
+
+            if order_id not in orders_map:
+                supplier_name = f"Поставщик #{order_id}"
+                supplier_obj = await db.get(Supplier, order_id)
+                if supplier_obj:
+                    supplier_name = supplier_obj.name
+
+                orders_map[order_id] = {
+                    "supplier_order_id": order_id,
+                    "supplier_name": supplier_name,
+                    "total_financial_load": 0.0,
+                    # По умолчанию считаем закрытым, пока не найдем единицы в пути
+                    "status": "Выставлено на полку", 
+                    "items": []
+                }
+
+            # Бизнес-правило: если хоть одна деталь едет, весь заказ горит в активном статусе
+            if current_status in ("EXPECTED", "IN_DELIVERY"):
+                orders_map[order_id]["status"] = "В ПУТИ"
+
+            orders_map[order_id]["total_financial_load"] += float(unit.purchase_price or 0)
+            
+            product_name = f"Товар ID {unit.product_id}"
+            product_obj = await db.get(Product, unit.product_id)
+            if product_obj:
+                product_name = product_obj.name
+
+            # Считаем количество одинаковых номенклатурных позиций внутри поставки
+            existing_item = next((i for i in orders_map[order_id]["items"] if i["product_name"] == product_name), None)
+            if existing_item:
+                existing_item["quantity"] += 1
+            else:
+                orders_map[order_id]["items"].append({"product_name": product_name, "quantity": 1})
+
+        # Сортируем и раскладываем по двум корзинам
+        active_orders = [o for o in orders_map.values() if o["status"] == "В ПУТИ"]
+        archived_orders = [o for o in orders_map.values() if o["status"] != "В ПУТИ"]
+
+        return {
+            "active": active_orders,
+            "archived": archived_orders
+        }
