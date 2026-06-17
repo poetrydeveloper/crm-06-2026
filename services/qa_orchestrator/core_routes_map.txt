@@ -42,6 +42,16 @@
 
 ================================================================================
 
+🛣️  ПУТЬ (ROUTE): /api/v1/cash/returns/check-relation
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       GET
+  ▪️ [ЧТО ДЕЛАЕТ]:   Check Return Item Relation
+  ▪️ [ФУНКЦИЯ КОДА]: check_return_item_relation_api_v1_cash_returns_check_relation_get
+  ▪️ [ТЕГИ/ГРУППА]:  Кассовый узел и Продажи
+  ▪️ [КОДЫ ОТВЕТОВ]: 200, 422
+
+================================================================================
+
 🛣️  ПУТЬ (ROUTE): /api/v1/cash/sales
 ------------------------------------------------------------
   ▪️ [МЕТОД]:       POST
@@ -204,9 +214,71 @@
 
 🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/orders
 ------------------------------------------------------------
+  ▪️ [МЕТОД]:       GET
+  ▪️ [ЧТО ДЕЛАЕТ]:   Get Supplier Orders Split List
+  ▪️ [ФУНКЦИЯ КОДА]: get_supplier_orders_split_list_api_v1_warehouse_orders_get
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200
+
   ▪️ [МЕТОД]:       POST
   ▪️ [ЧТО ДЕЛАЕТ]:   Create Supplier Order
   ▪️ [ФУНКЦИЯ КОДА]: create_supplier_order_api_v1_warehouse_orders_post
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 201, 422
+
+================================================================================
+
+🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/pre-orders
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       GET
+  ▪️ [ЧТО ДЕЛАЕТ]:   Get Warehouse Analytics Pre Orders
+  ▪️ [ФУНКЦИЯ КОДА]: get_warehouse_analytics_pre_orders_api_v1_warehouse_pre_orders_get
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200
+
+================================================================================
+
+🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/pre-orders/cache-update
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       POST
+  ▪️ [ЧТО ДЕЛАЕТ]:   Update Pre Orders Cache From Analyzer
+  ▪️ [ФУНКЦИЯ КОДА]: update_pre_orders_cache_from_analyzer_api_v1_warehouse_pre_orders_cache_update_post
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200, 422
+
+================================================================================
+
+🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/pre-orders/exclude
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       POST
+  ▪️ [ЧТО ДЕЛАЕТ]:   Exclude Product From Pre Orders
+  ▪️ [ФУНКЦИЯ КОДА]: exclude_product_from_pre_orders_api_v1_warehouse_pre_orders_exclude_post
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200, 422
+
+================================================================================
+
+🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/purchase-exceptions-raw
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       GET
+  ▪️ [ЧТО ДЕЛАЕТ]:   Get Raw Purchase Exceptions List
+  ▪️ [ФУНКЦИЯ КОДА]: get_raw_purchase_exceptions_list_api_v1_warehouse_purchase_exceptions_raw_get
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200
+
+================================================================================
+
+🛣️  ПУТЬ (ROUTE): /api/v1/warehouse/purchase-rules
+------------------------------------------------------------
+  ▪️ [МЕТОД]:       GET
+  ▪️ [ЧТО ДЕЛАЕТ]:   Get All Dynamic Purchase Rules
+  ▪️ [ФУНКЦИЯ КОДА]: get_all_dynamic_purchase_rules_api_v1_warehouse_purchase_rules_get
+  ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
+  ▪️ [КОДЫ ОТВЕТОВ]: 200
+
+  ▪️ [МЕТОД]:       POST
+  ▪️ [ЧТО ДЕЛАЕТ]:   Create New Dynamic Purchase Rule
+  ▪️ [ФУНКЦИЯ КОДА]: create_new_dynamic_purchase_rule_api_v1_warehouse_purchase_rules_post
   ▪️ [ТЕГИ/ГРУППА]:  Склад и Логистика Закупок
   ▪️ [КОДЫ ОТВЕТОВ]: 201, 422
 
