@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/08_cashbox_sale_execution.feature
+@Feature_Context: Frontend_Cashbox_Sale_Execution_Lightweight_CRM
 Функционал: Фронтенд — Проведение кассовой продажи
 
+  @Scenario_ID: UI-CSH-SL-0008-01
   Сценарий: Успешное списание товара из корзины при оформлении чека
     Дано В электронном чеке кассы находится товар с серийным номером "SN-MOCK-777"
     Когда Кассир подтверждает покупку и нажимает кнопку "Оформить продажу"

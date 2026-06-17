@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/09_cashbox_disassembly_templated.feature
+@Feature_Context: Frontend_Cashbox_Disassembly_Templated_Lightweight_CRM
 Функционал: Фронтенд — Интеллектуальный режим разукомплектации наборов
 
+  @Scenario_ID: UI-CSH-DS-0009-01
   Сценарий: Вызов умного модального окна дербана и экстренный разбор под клиента
     Дано На витрине кассы выбран физический юнит со статус "IN_STORE"
     Когда Кассир нажимает кнопку "Разукомплектовать юнит"

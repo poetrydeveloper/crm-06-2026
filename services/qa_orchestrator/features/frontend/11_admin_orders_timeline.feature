@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/11_admin_orders_timeline.feature
+@Feature_Context: Frontend_Admin_Orders_Timeline_Lightweight_CRM
 Функционал: Фронтенд — ERP-панель управления закупками и предзаказами
 
+  @Scenario_ID: UI-ADM-ORD-0011-01
   Сценарий: Просмотр активных, закрытых заказов и оформление товаров из предзаказа
     Дано Пользователь открыл экран логистики по адресу "/admin/orders"
     Тогда Он видит раздельные вкладки для активных поставок, архива и листа предзаказов от аналитики

@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/06_warehouse_order_details.feature
+@Feature_Context: Frontend_Warehouse_Order_Details_Lightweight_CRM
 Функционал: Фронтенд — Раскрытие состава заявки на складе
 
+  @Scenario_ID: UI-WH-DET-0006-01
   Сценарий: Просмотр номенклатурных позиций внутри открытого заказа
     Дано Пользователь открыл экран логистики по адресу "/warehouse/receipts"
     Когда Кладовщик кликает на строку активной заявки поставщика

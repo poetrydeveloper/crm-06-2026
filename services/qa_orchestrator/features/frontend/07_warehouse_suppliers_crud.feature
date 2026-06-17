@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/07_warehouse_suppliers_crud.feature
+@Feature_Context: Frontend_Warehouse_Suppliers_CRUD_Lightweight_CRM
 Функционал: Фронтенд — Управление списком поставщиков склада
 
+  @Scenario_ID: UI-WH-SUP-0007-01
   Сценарий: Просмотр и регистрация нового контрагента в системе
     Дано Пользователь открыл экран логистики по адресу "/warehouse/receipts"
     Когда Менеджер переключается на вкладку "Поставщики"

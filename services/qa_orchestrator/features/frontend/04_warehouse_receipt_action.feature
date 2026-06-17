@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/04_warehouse_receipt_action.feature
+@Feature_Context: Frontend_Warehouse_Receipt_Action_Lightweight_CRM
 Функционал: Фронтенд — Оприходование накладной кладовщиком
 
+  @Scenario_ID: UI-WH-ACT-0004-01
   Сценарий: Фактическая приемка товара и генерация серийных номеров
     Дано На странице "/warehouse/receipts" отображается активная заявка №1 со статусом "IN_DELIVERY"
     Когда Кладовщик нажимает кнопку "Принять накладную" на этой заявке

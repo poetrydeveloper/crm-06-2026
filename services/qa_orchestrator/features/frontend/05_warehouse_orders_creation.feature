@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/05_warehouse_orders_creation.feature
+@Feature_Context: Frontend_Warehouse_Orders_Creation_Lightweight_CRM
 Функционал: Фронтенд — Создание новой заявки поставщику
 
+  @Scenario_ID: UI-WH-ORD-0005-01
   Сценарий: Формирование заказа номенклатуры и отправка в ядро
     Дано Пользователь открыл экран логистики по адресу "/warehouse/receipts"
     Когда Менеджер нажимает кнопку "Создать новую заявку"
