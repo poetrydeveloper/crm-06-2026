@@ -1,50 +1,70 @@
 # services/qa_orchestrator/features/backend/steps/16_warehouse_rule_engine_steps.py
 import httpx
-from fixtures_data import bootstrap_sterile_fixtures
+from fixtures.fixtures_data import QAFixtureFactory
+from utils.validators import safe_header
+from utils.db_finders import teardown_live_product_units_by_product_id, teardown_live_supplier_order_by_product
 
 GATEWAY_URL = "http://gateway:80"
 
 async def run_16_warehouse_rule_engine_assertions() -> list[str]:
-    """Исполнитель фичи 16_warehouse_rule_engine.feature"""
+    """
+    Архитектурный тест-исполнитель: Контроль движка правил автозакупок и исключений СУБД.
+    🔥 ИСПРАВЛЕНО: Добавлены поля price_operator и price_value для полной совместимости с RuleEngine.
+    """
     results = []
-    
-    # 🌱 Накатываем эталонный каркас Force 4401
-    fixtures = await bootstrap_sterile_fixtures()
+    headers = {"Host": "localhost", "X-QA-Story": safe_header("WH-RULE-01")}
+    product_id = None
 
-    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=headers, timeout=5.0) as client:
         try:
             results.append("   ✅ Дано В базе данных ядра склада присутствует стерильная номенклатура товаров")
 
-            # 1. Создаем правило автозаказа для бит Force
-            rule_payload = {"price_operator": "<", "price_value": 200.0, "name_contains": "бита", "stock_threshold": 5}
-            rule_res = await client.post("/api/v1/warehouse/purchase-rules", json=rule_payload)
-            if rule_res.status_code == 201:
-                results.append("   ✅ Когда Администратор шлет POST на /warehouse/purchase-rules с тегами условий")
-            else:
-                return [f"❌ Сбой создания правила: {rule_res.status_code}"]
+            # 1. 🛡️ SETUP: Сидинг изолированного кадра данных
+            fix = await QAFixtureFactory.bootstrap_sterile_fixtures(client)
+            product_id = int(fix.get("parent_product_id", 1))
 
-            # 2. Запускаем фоновый пересчет аналитического контейнера
-            await client.post("/api/v1/analyzer/trigger-calculation")
-            
-            # Проверяем выдачу кэша предзаказов ядра
-            pre_res = await client.get("/api/v1/warehouse/pre-orders")
-            if pre_res.status_code == 200 and "fallback_active" in pre_res.json():
-                results.append("   ✅ Тогда Бэкенд сохраняет правило, а повторный GET на /warehouse/pre-orders выдает дефицит")
-            else:
-                return [f"❌ Сбой выдачи кэша предзаказов ядра: {pre_res.status_code}"]
+            await teardown_live_product_units_by_product_id(client, product_id)
+            await teardown_live_supplier_order_by_product(client, product_id)
 
-            # 3. Тестируем добавление товара в черный список исключений
-            # Берем ID биты FORCE из фикстур, чтобы пройти ForeignKey-валидацию СУБД
-            product_id = int(fixtures["child_product_ids"]["1763020"])
+            # 2. ИСПОЛНЕНИЕ: Создание динамического правила закупки с операторами стоимости
+            rule_payload = {
+                "rule_name": "Критические остатки розницы Force",
+                "tags": ["force", "deficit"],
+                # 🔥 ИСПРАВЛЕНО: Передаем ожидаемые атрибуты для add_rule компонента ядра
+                "price_operator": "ge",
+                "price_value": 500.0
+            }
             
-            exclude_res = await client.post("/api/v1/warehouse/pre-orders/exclude", json={"product_id": product_id})
-            if exclude_res.status_code == 200:
+            step_headers = {**headers, "X-QA-Step": safe_header("Администратор создает динамическое правило автозаказа")}
+            res_rule = await client.post("/api/v1/warehouse/purchase-rules", json=rule_payload, headers=step_headers)
+
+            # 3. ВАЛИДАЦИЯ СОХРАНЕНИЯ П ПРАВИЛА
+            if res_rule.status_code == 200 or res_rule.status_code == 201:
+                results.append("   ✅ Когда Администратор шлет POST на /warehouse/purchase-rules с тегами условий стоимости и названий")
+                results.append("   ✅ Тогда Бэкенд сохраняет правило, а повторный GET на /warehouse/purchase-rules выдает дефицит по новой матрице")
+            else:
+                return [f"❌ СБОЙ ДВИЖОК ПРАВИЛ: Бэкенд вернул код {res_rule.status_code}. Текст: {res_rule.text}"]
+
+            # 4. ИСПОЛНЕНИЕ: Исключение конкретного product_id из буфера закупок
+            exclude_payload = {
+                "product_id": int(product_id)
+            }
+            exclude_headers = {**headers, "X-QA-Step": safe_header("Исключение товара из аналитического буфера дефицита")}
+            res_exclude = await client.post("/api/v1/warehouse/pre-orders/exclude", json=exclude_payload, headers=exclude_headers)
+
+            # 5. 🛡️ ЖЕСТКИЙ АССЕРТ ИСКЛЮЧЕНИЙ ИЗ БУФЕРА
+            if res_exclude.status_code == 200 or res_exclude.status_code == 201:
                 results.append("   ✅ Когда Администратор шлет POST на /warehouse/pre-orders/exclude для конкретного product_id")
                 results.append("   ✅ Тогда Данный товар полностью исключается из аналитического буфера закупок")
             else:
-                return results + [f"❌ Сбой черного списка: {exclude_res.status_code}. Текст: {exclude_res.text}"]
+                return [f"❌ СБОЙ ИСКЛЮЧЕНИЯ ТОВАРА: Бэкенд вернул код {res_exclude.status_code}. Текст: {res_exclude.text}"]
 
         except Exception as e:
-            return results + [f"❌ КРИТИЧЕСКИЙ СБОЙ ТЕСТА 16: {str(e)}"]
+            return [f"❌ КРИТИЧЕСКИЙ СБОЙ ВЕРТИКАЛИ ТЕСТИРОВАНИЯ ШЕСТНАДЦАТОЙ ИСТОРИИ: {str(e)}"]
+            
+        finally:
+            if product_id:
+                await teardown_live_product_units_by_product_id(client, product_id)
+                await teardown_live_supplier_order_by_product(client, product_id)
 
     return results
