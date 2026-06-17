@@ -1,6 +1,8 @@
 # services/qa_orchestrator/features/frontend/13_cashbox_return_intelligent.feature
+@Feature_Context: Frontend_Cashbox_Return_Intelligent_Lightweight_CRM
 Функционал: Фронтенд — Информативный возврат сателлитов из вскрытых наборов
 
+  @Scenario_ID: UI-CSH-RET-0013-01
   Сценарий: Проверка связей проданного сателлита с родительским набором при возврате
     Дано Пользователь открыл экран возвратов по адресу "/admin/returns"
     Когда Кассир вводит серийный номер проданного сателлита "SN-DERBAN-MOCK" для проверки
