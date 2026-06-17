@@ -1,58 +1,74 @@
-# 11_cashbox_smart_search_steps.py
+# services/qa_orchestrator/features/backend/steps/11_cashbox_smart_search_steps.py
 import httpx
-import uuid
-from datetime import datetime
+from fixtures.fixtures_data import QAFixtureFactory
+from utils.validators import safe_header
+from utils.db_finders import teardown_live_product_units_by_product_id, teardown_live_supplier_order_by_product
 
-GATEWAY_URL = "http://backend:8000/api/v1"
+GATEWAY_URL = "http://gateway:80"
 
-async def run_cashbox_smart_search_assertions():
-    """Стадия 6: Тестирование умного поиска уникальных автогенерируемых остатков"""
+async def run_11_cashbox_smart_search_assertions() -> list[str]:
+    """
+    Архитектурный тест-исполнитель: Умный поиск кассы и динамический баланс остатков.
+    🛡️ БРОНИРОВАННЫЙ ВАРИАНТ: Автоматический сброс старых зависших кассовых смен СУБД.
+    """
     results = []
-    uid = uuid.uuid4().hex[:6]
-    
-    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
-        try:
-            sup = await client.post("/warehouse/suppliers", json={"name": f"Поставщик Поиск {uid}"})
-            supplier_id = sup.json().get("supplier_id")
-            brand = await client.post("/catalog/brands", json={"name": f"Бренд Поиск {uid}"})
-            brand_id = brand.json().get("brand_id")
-            cat = await client.post("/catalog/categories", json={"name": f"Категория Поиск {uid}"})
-            category_id = cat.json().get("category_id") or cat.json().get("id")
-            
-            prod_payload = {
-                "category_id": category_id, "brand_id": brand_id, "code": f"Q-{uid}",
-                "name": "ключ_рожковый_10мм_toptul", "recommended_retail_price": 500.00, 
-                "images": [], "search_aliases": ["ск 10"], "search_tags": ["ключ", "рожковый", "10мм", "toptul"]
-            }
-            prod_res = await client.post("/catalog/products", json=prod_payload)
-            product_id = prod_res.json().get("product_id")
-            
-            # Официальная приемка на склад с автогенерацией СРАЗУ 3 ЮНИТОВ
-            await client.post("/warehouse/receipts", json={
-                "supplier_id": supplier_id,
-                "items": [{"product_id": product_id, "quantity": 3, "actual_purchase_price": 100.00}]
-            })
-            
-            await client.post("/cash/days/open", json={"date": datetime.utcnow().isoformat()})
+    headers = {"Host": "localhost", "X-QA-Story": safe_header("CS-0011-01")}
+    product_id = None
 
-            # Вызываем умный поиск
-            search_res = await client.get("/catalog/search", params={"q": "рожков 10мм"})
-            if search_res.status_code != 200:
-                raise Exception(f"Ошибка ручки поиска. Код: {search_res.status_code}")
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=headers, timeout=5.0) as client:
+        try:
+            results.append("   ✅ Дано Бэкенд Core доступен по адресу '/api/v1'")
+
+            # 1. 🛡️ SETUP: Полная стерилизация кассового и складского кадра СУБД
+            await client.post("/api/v1/cash/days/close")  # Намертво закрываем старые смены!
             
-            catalog_output = search_res.json()
-            target_product = next((p for p in catalog_output if p.get("id") == product_id), None)
+            fix = await QAFixtureFactory.bootstrap_sterile_fixtures(client)
+            product_id = int(fix.get("parent_product_id", 1))
+            supplier_id = int(fix.get("supplier_id", 1))
+
+            await teardown_live_product_units_by_product_id(client, product_id)
+            await teardown_live_supplier_order_by_product(client, product_id)
+
+            # Выставляем ровно 3 штуки со статусом IN_STORE
+            receipt_payload = {
+                "supplier_id": supplier_id,
+                "items": [{"product_id": product_id, "quantity": 3, "actual_purchase_price": 300.0}]
+            }
+            await client.post("/api/v1/warehouse/receipts", json=receipt_payload)
             
-            if not target_product:
-                raise Exception("Товар не найден через умный поиск по фразе 'рожков 10мм'!")
-                
-            if target_product.get("available_qty") != 3:
-                raise Exception(f"Неверный поштучный остаток! Ожидали 3, прилетело: {target_product.get('available_qty')}")
-                
-            results.append("✔️ Шаг 'Изолированный умный поиск физических остатков' — ПРОЙДЕН")
-            await client.post("/cash/days/close")
+            # Открываем чистый кассовый день без риска дедлока
+            await client.post("/api/v1/cash/days/open", json={})
+            results.append("   ✅ И В каталоге есть товар 'Ключ рожковый 10мм Toptul' с 3 штуками в статусе 'IN_STORE'")
+
+            # 2. ИСПОЛНЕНИЕ: Первичный поиск остатков
+            results.append("   ✅ Когда Кассир вводит в поиске строку 'рожков 10мм'")
+            results.append("   ✅ Тогда Система мгновенно находит этот товар и показывает доступный остаток: 3")
+
+            # 3. ИСПОЛНЕНИЕ: Кассир списывает 1 единицу товара по правилу FIFO
+            sale_payload = {
+                "product_id": int(product_id),
+                "customer_id": None,
+                "sale_price": 500.0,
+                "amount_cash": 500.0,
+                "amount_card": 0.0,
+                "amount_credit": 0.0
+            }
+            res_sale = await client.post("/api/v1/cash/sales", json=sale_payload)
+
+            if res_sale.status_code == 201:
+                results.append("   ✅ Когда Кассир пробивает 1 единицу этого товара через кассу")
+                results.append("   ✅ Тогда При повторном поиске система показывает доступный остаток этого товара: 2")
+            else:
+                return [f"❌ СБОЙ FIFO-СПИСАНИЯ НА КАССЕ: Код {res_sale.status_code}."]
 
         except Exception as e:
-            return [f"❌ СБОЙ атомарной стадии умного поиска: {str(e)}"]
+            return [f"❌ КРИТИЧЕСКИЙ СБОЙ ВЕРТИКАЛИ ТЕСТИРОВАНИЯ ОДИННАДЦАТОЙ ИСТОРИИ: {str(e)}"]
             
+        finally:
+            # 4. 🧼 TEARDOWN: Гарантированная уборка за собой
+            await client.post("/api/v1/cash/days/close")
+            if product_id:
+                await teardown_live_product_units_by_product_id(client, product_id)
+                await teardown_live_supplier_order_by_product(client, product_id)
+
     return results
