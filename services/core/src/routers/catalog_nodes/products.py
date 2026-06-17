@@ -1,4 +1,4 @@
-# services/core/src/routers/catalog/products.py
+# services/core/src/routers/catalog_nodes/products.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,7 +13,6 @@ def transform_to_snake_case(text: str) -> str:
         return ""
     return "_".join(text.lower().strip().split())
 
-# 🔥 ИСПРАВЛЕНО: Статический роут поднят ВВЕРХ, чтобы FastAPI не путал его с динамическим ID
 @router.get("/anomalies")
 async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
     stmt = select(Product).where(Product.category_id == 1)
@@ -27,6 +26,12 @@ async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)):
+    target_code = payload.code.lower().strip()
+    
+    existing = await db.execute(select(Product).where(Product.code == target_code))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Товар с таким артикулом уже зарегистрирован")
+
     category = await db.get(Category, payload.category_id)
     if not category:
         raise HTTPException(status_code=404, detail=f"Категория с ID {payload.category_id} не найдена")
@@ -35,24 +40,21 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
     if not brand:
         raise HTTPException(status_code=404, detail=f"Бренд с ID {payload.brand_id} не найден")
 
-    existing = await db.execute(select(Product).where(Product.code == payload.code))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Товар с таким артикулом уже зарегистрирован")
-
     clean_name = payload.name.lower().replace(",", " ").replace(".", " ").replace("-", " ")
     stop_words = {"и", "в", "на", "под", "с", "по"}
     tags = [word for word in clean_name.split() if len(word) > 1 and word not in stop_words]
-    tags.append(payload.code.lower())
+    tags.append(target_code)
     tags.append(brand.name)
 
     new_product = Product(
         category_id=payload.category_id,
         brand_id=payload.brand_id,
-        code=payload.code,
+        code=target_code,
         name=transform_to_snake_case(payload.name),
         description=payload.description,
         recommended_retail_price=payload.recommended_retail_price,
-        images=payload.images,
+        # 🔥 ИСПРАВЛЕНО: Безопасный фолбэк на пустой список, если изображения не переданы или равны None
+        images=payload.images if (payload.images is not None) else [],
         search_tags=tags,
         search_aliases=[a.lower().strip() for a in payload.search_aliases]
     )
@@ -62,7 +64,6 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
 
 @router.get("/{product_id}", status_code=200)
 async def get_product_by_id_api(product_id: int, db: AsyncSession = Depends(get_db)):
-    """Служебный эндпоинт инспекции СУБД для BDD-оркестратора"""
     product = await db.get(Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
@@ -85,11 +86,11 @@ async def update_product(product_id: int, payload: ProductCreate, db: AsyncSessi
         
     product.category_id = payload.category_id
     product.brand_id = payload.brand_id
-    product.code = payload.code
+    product.code = payload.code.lower().strip()
     product.name = transform_to_snake_case(payload.name)
     product.description = payload.description
     product.recommended_retail_price = payload.recommended_retail_price
-    product.images = payload.images
+    product.images = payload.images if (payload.images is not None) else []
     await db.commit()
     return {"status": "success", "message": "Карточка товара успешно изменена"}
 
