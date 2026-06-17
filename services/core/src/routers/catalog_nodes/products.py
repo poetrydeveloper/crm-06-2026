@@ -13,6 +13,18 @@ def transform_to_snake_case(text: str) -> str:
         return ""
     return "_".join(text.lower().strip().split())
 
+# 🔥 ИСПРАВЛЕНО: Статический роут поднят ВВЕРХ, чтобы FastAPI не путал его с динамическим ID
+@router.get("/anomalies")
+async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
+    stmt = select(Product).where(Product.category_id == 1)
+    result = await db.execute(stmt)
+    products = result.scalars().all()
+    return {
+        "has_anomalies": len(products) > 0,
+        "count": len(products),
+        "products": [{"id": p.id, "code": p.code, "name": p.name} for p in products]
+    }
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_db)):
     category = await db.get(Category, payload.category_id)
@@ -94,14 +106,3 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(product)
     await db.commit()
     return {"status": "success", "message": "Товар успешно удален"}
-
-@router.get("/anomalies")
-async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
-    stmt = select(Product).where(Product.category_id == 1)
-    result = await db.execute(stmt)
-    products = result.scalars().all()
-    return {
-        "has_anomalies": len(products) > 0,
-        "count": len(products),
-        "products": [{"id": p.id, "code": p.code, "name": p.name} for p in products]
-    }
