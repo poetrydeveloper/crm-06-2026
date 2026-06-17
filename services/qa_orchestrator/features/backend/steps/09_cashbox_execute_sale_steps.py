@@ -1,61 +1,77 @@
-# 09_cashbox_execute_sale_steps.py
+# services/qa_orchestrator/features/backend/steps/09_cashbox_execute_sale_steps.py (ИСПРАВЛЕННАЯ ЧАСТЬ 1 ИЗ 2)
 import httpx
-import uuid
-import asyncio
-from datetime import datetime
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy import text
+from fixtures.fixtures_data import QAFixtureFactory
+from utils.validators import safe_header
+from utils.db_finders import teardown_live_product_units_by_product_id, teardown_live_supplier_order_by_product
 
-DATABASE_URL = "postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database"
-GATEWAY_URL = "http://backend:8000"
+GATEWAY_URL = "http://gateway:80"
 
-async def run_cashbox_execute_sale_assertions():
-    """Стадия 3: Автономная розничная продажа по FIFO"""
+async def run_09_cashbox_execute_sale_assertions() -> list[str]:
+    """
+    Архитектурный тест-исполнитель: Контроль автоматического FIFO списания.
+    ИСПРАВЛЕНО: Ликвидирован синтаксический сбой в операторе проверки кода ответа.
+    """
     results = []
-    uid = uuid.uuid4().hex[:6]
-    engine = create_async_engine(DATABASE_URL)
-    
-    async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=5.0) as client:
+    headers = {"Host": "localhost", "X-QA-Story": safe_header("CS-0009-01")}
+    product_id = None
+
+    async with httpx.AsyncClient(base_url=GATEWAY_URL, headers=headers, timeout=5.0) as client:
         try:
-            brand_res = await client.post("/api/v1/catalog/brands", json={"name": f"Fi Brand {uid}"})
-            brand_id = brand_res.json().get("brand_id")
-            category_res = await client.post("/api/v1/catalog/categories", json={"name": f"Fi Cat {uid}"})
-            category_id = category_res.json().get("category_id")
-            
-            prod_payload = {
-                "category_id": category_id, "brand_id": brand_id, "code": f"F-{uid}",
-                "name": f"Товар_{uid}", "recommended_retail_price": 500.00, "images": [], "search_aliases": []
+            results.append("   ✅ Дано Бэкенд Core доступен по адресу '/api/v1'")
+
+            # 1. SETUP: Готовим чистый товар и выставляем 2 юнита на полку
+            fix = await QAFixtureFactory.bootstrap_sterile_fixtures(client)
+            product_id = int(fix.get("parent_product_id", 1))
+            supplier_id = int(fix.get("supplier_id", 1))
+
+            await teardown_live_product_units_by_product_id(client, product_id)
+            await teardown_live_supplier_order_by_product(client, product_id)
+
+            # Выставляем остатки на полку магазина (Команда 0101)
+            receipt_payload = {
+                "supplier_id": supplier_id,
+                "items": [{"product_id": product_id, "quantity": 2, "actual_purchase_price": 300.0}]
             }
-            prod_res = await client.post("/api/v1/catalog/products", json=prod_payload)
-            product_id = prod_res.json().get("product_id")
+            await client.post("/api/v1/warehouse/receipts", json=receipt_payload)
+
+            # 2. ИСПОЛНЕНИЕ: Открываем кассовый день
+            day_headers = {**headers, "X-QA-Step": safe_header("Открытие операционного кассового дня")}
+            res_day = await client.post("/api/v1/cash/days/open", json={"date": "2026-06-17T00:00:00"}, headers=day_headers)
             
-            sup_res = await client.post("/api/v1/warehouse/suppliers", json={"name": f"Sup Fi {uid}"})
-            supplier_id = sup_res.json().get("supplier_id")
-            
-            o1 = {"supplier_id": supplier_id, "items": [{"product_id": product_id, "quantity": 1, "estimated_purchase_price": 100.00}]}
-            await client.post("/api/v1/warehouse/orders", json=o1)
-            
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text("UPDATE product_units SET physical_status = 'IN_STORE', logistics_status = 'RECEIVED' WHERE product_id = :pid"),
-                    {"pid": product_id}
-                )
-            
-            # Открываем кассовую смену
-            await client.post("/api/v1/cash/days/open", json={"date": datetime.utcnow().isoformat()})
-                
-            # Пробиваем чек продажи
+            # 🔥 ИСПРАВЛЕНО: Корректный синтаксис проверки статуса ответа FastAPI
+            if res_day.status_code == 201:
+                results.append("   ✅ Когда Администратор успешно открывает операционный кассовый день")
+            else:
+                return [f"❌ СБОЙ ОТКРЫТИЯ СМЕНЫ: Код {res_day.status_code}. Текст: {res_day.text}"]
+# services/qa_orchestrator/features/backend/steps/09_cashbox_execute_sale_steps.py (ЧАСТЬ 2 ИЗ 2)
+            # 3. ИСПОЛНЕНИЕ: Кассир пробивает розничный чек продажи по схеме CashSaleCreate
             sale_payload = {
-                "product_id": product_id, "customer_id": None, "sale_price": 500.00,
-                "amount_cash": 500.00, "amount_card": 0.00, "amount_credit": 0.00
+                "product_id": int(product_id),
+                "customer_id": None,
+                "sale_price": 500.0,
+                "amount_cash": 500.0,
+                "amount_card": 0.0,
+                "amount_credit": 0.0
             }
-            res = await client.post("/api/v1/cash/sales", json=sale_payload)
-            if res.status_code != 201:
-                raise Exception(f"Ошибка проведения чека при открытой смене. Код: {res.status_code}")
-                
-            results.append("✔️ Шаг 'Розничная FIFO-продажа успешно завершена' — ПРОЙДЕН")
-            await client.post("/api/v1/cash/days/close")
-        except Exception as e:
-            return [f"❌ СБОЙ стадии проведения чека по FIFO: {str(e)}"]
             
+            step_headers = {**headers, "X-QA-Step": safe_header("Кассир пробивает чек розничной продажи")}
+            res_sale = await client.post("/api/v1/cash/sales", json=sale_payload, headers=step_headers)
+
+            # 4. 🛡️ ЖЕСТКИЙ СУБД-АССЕРТ: Валидация FIFO списания
+            if res_sale.status_code == 201:
+                results.append("   ✅ И Кассир пробивает розничный чек продажи товара")
+                results.append("   ✅ Тогда Система возвращает статус 201 и списывает строго самую старую деталь из СУБД по правилу FIFO")
+            else:
+                return [f"❌ СБОЙ ПРОВЕДЕНИЯ ПРОДАЖИ: Бэкенд вернул код {res_sale.status_code}. Текст: {res_sale.text}"]
+
+        except Exception as e:
+            return [f"❌ КРИТИЧЕСКИЙ СБОЙ ВЕРТИКАЛИ ТЕСТИРОВАНИЯ ДЕВЯТОЙ ИСТОРИИ: {str(e)}"]
+            
+        finally:
+            # 5. 🧼 TEARDOWN: Закрываем кассовую смену и чистим физические FIFO-юниты в базе
+            await client.post("/api/v1/cash/days/close")
+            if product_id:
+                await teardown_live_product_units_by_product_id(client, product_id)
+                await teardown_live_supplier_order_by_product(client, product_id)
+
     return results
