@@ -2,13 +2,42 @@
 import uuid
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from src.database import get_db
 from src.models import ProductUnit
 from src.models.product_unit import LogisticsStatus, PhysicalStatus
 from src.schemas.warehouse import CreateSupplierOrder
 
 router = APIRouter(tags=["Склад: Заказы поставщикам и FIFO"])
+
+# 🔥 НОВЫЙ ЭНДПОИНТ: Получить список заказов (product_units со статусом EXPECTED)
+@router.get("/orders", status_code=200)
+async def list_supplier_orders(db: AsyncSession = Depends(get_db)):
+    """📋 Получить список заказов поставщикам (EXPECTED)"""
+    result = await db.execute(
+        text("""
+            SELECT 
+                supplier_id,
+                DATE(created_at) as order_date,
+                COUNT(*) as total_units,
+                SUM(purchase_price) as total_amount
+            FROM product_units 
+            WHERE physical_status = 'EXPECTED'
+            GROUP BY supplier_id, DATE(created_at)
+            ORDER BY order_date DESC 
+            LIMIT 100
+        """)
+    )
+    orders = [
+        {
+            "supplier_id": row[0],
+            "order_date": str(row[1]),
+            "total_units": row[2],
+            "total_amount": float(row[3]) if row[3] else 0
+        }
+        for row in result
+    ]
+    return {"orders": orders, "total": len(orders)}
 
 @router.post("/orders", status_code=status.HTTP_201_CREATED)
 async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession = Depends(get_db)):
@@ -43,7 +72,6 @@ async def create_supplier_order(payload: CreateSupplierOrder, db: AsyncSession =
         })
         
     await db.commit()
-    # 🔥 ИСПРАВЛЕНО: Структура ответа теперь полностью соответствует схеме SupplierOrderResponse!
     return {
         "supplier_id": payload.supplier_id,
         "supplier_name": "Force Опт",
