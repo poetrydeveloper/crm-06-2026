@@ -9,6 +9,17 @@ from src.schemas.warehouse import RuleCreatePayload
 
 router = APIRouter(tags=["Склад: Правила автозаказа"])
 
+# 🔥 НОВЫЙ ЭНДПОИНТ: Получить список поставщиков
+@router.get("/suppliers", status_code=200)
+async def list_suppliers(db: AsyncSession = Depends(get_db)):
+    """📋 Получить список всех поставщиков"""
+    result = await db.execute(select(Supplier).order_by(Supplier.name))
+    suppliers = result.scalars().all()
+    return {
+        "suppliers": [{"supplier_id": s.id, "name": s.name} for s in suppliers],
+        "total": len(suppliers)
+    }
+
 @router.get("/purchase-rules", status_code=200)
 async def get_all_dynamic_purchase_rules(db: AsyncSession = Depends(get_db)):
     return await RuleEngine.get_rules(db) 
@@ -22,7 +33,6 @@ async def create_new_dynamic_purchase_rule(payload: RuleCreatePayload, db: Async
         def __init__(self, data):
             self._data = data
         def __getattr__(self, name):
-            # Если поле запрошено движком, но его нет в JSON, отдаем дефолт или None
             if name == "price_operator": return self._data.get(name, "ge")
             if name == "price_value": return self._data.get(name, 500.0)
             return self._data.get(name, None)
