@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { CashDaysControls } from '../../components/atomic/CashDaysControls';
 import { CashDaysTable } from '../../components/atomic/CashDaysTable';
-import { AnalyticsSummaryBlock } from '../../components/atomic/AnalyticsSummaryBlock'; // 🔥 Новой импорт
+import { AnalyticsSummaryBlock } from '../../components/atomic/AnalyticsSummaryBlock';
+import { CashDaysLoader } from '../../components/atomic/CashDaysLoader'; // 🔥 Атомарный загрузчик
 
 interface CashDayRecord {
   id: number;
@@ -18,24 +19,9 @@ interface AnalyticsMetrics {
 }
 
 export const CashDays: React.FC = () => {
-  const [records, setRecords] = useState<CashDayRecord[]>([]);
-  const [metrics, setMetrics] = useState<AnalyticsMetrics | null>(null); // 🔥 Стейт финансовых метрик
-  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<AnalyticsMetrics | null>(null);
 
-  // 📥 1. Тянем историю смен с бэкенда ядра
-  const loadCashDays = async () => {
-    try {
-      const response = await fetch('/api/v1/cash/days');
-      if (response.ok) {
-        const data = await response.json();
-        setRecords(Array.isArray(data) ? data : (data.days || data.data || []));
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки кассовых дней:', error);
-    }
-  };
-
-  // 📥 2. Тянем аналитический свод сложного дашборда из микросервиса аналитики через проброс шлюза
+  // 📥 Тянем аналитический свод сложного дашборда из микросервиса аналитики через проброс шлюза
   const loadAnalyticsSummary = async () => {
     try {
       const response = await fetch('/api/v1/analytics/summary');
@@ -50,18 +36,12 @@ export const CashDays: React.FC = () => {
     }
   };
 
-  const syncAllData = async () => {
-    setLoading(true);
-    await Promise.all([loadCashDays(), loadAnalyticsSummary()]);
-    setLoading(false);
-  };
-
   useEffect(() => {
-    syncAllData();
+    loadAnalyticsSummary();
   }, []);
 
   // 🔓 Действие: Открыть смену
-  const handleOpenDay = async () => {
+  const handleOpenDay = async (reloadFn: () => void) => {
     try {
       const response = await fetch('/api/v1/cash/days/open', {
         method: 'POST',
@@ -70,36 +50,35 @@ export const CashDays: React.FC = () => {
       });
       if (response.ok) {
         alert('🎉 Кассовая смена успешно открыта!');
-        syncAllData();
+        reloadFn();
       } else {
         alert('Симуляция: Смена переведена в статус ОТКРЫТА.');
-        setRecords(prev => [{ id: Date.now(), created_at: new Date().toISOString(), status: 'ОТКРЫТА', total_sales: 0 }, ...prev]);
       }
     } catch (e) { console.error(e); }
   };
 
   // 🔒 Действие: Закрыть смену
-  const handleCloseDay = async () => {
+  const handleCloseDay = async (reloadFn: () => void) => {
     try {
       const response = await fetch('/api/v1/cash/days/close', { method: 'POST' });
       if (response.ok) {
         alert('🔒 Кассовая смена закрыта, Z-отчет сформирован.');
-        syncAllData();
+        reloadFn();
       } else {
         alert('Симуляция: Смена закрыта.');
-        setRecords(prev => prev.map((r, i) => i === 0 ? { ...r, status: 'ЗАКРЫТА' } : r));
       }
     } catch (e) { console.error(e); }
   };
 
   // ⚡ Действие: Экстренный сброс блокировок
-  const handleEmergencyReopen = async () => {
+  const handleEmergencyReopen = async (reloadFn: () => void, records: CashDayRecord[]) => {
     if (!confirm('Внимание! Экстренное переоткрытие принудительно сбросит флаги блокировок СУБД. Продолжить?')) return;
     try {
-      const response = await fetch('/api/v1/cash/days/reopen', { method: 'POST' });
+      const firstDayId = records.length > 0 ? records[0].id : 1;
+      const response = await fetch(`/api/v1/cash/days/${firstDayId}/reopen`, { method: 'POST' });
       if (response.ok) {
         alert('⚡ Смена успешно переоткрыта администратором.');
-        syncAllData();
+        reloadFn();
       } else {
         alert('Симуляция: Флаги СУБД сброшены, смена доступна для кассиров.');
       }
@@ -110,29 +89,57 @@ export const CashDays: React.FC = () => {
     <div style={{ padding: '20px', background: '#121212', color: '#fff', minHeight: 'calc(100vh - 60px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0, color: '#4fa8ff' }}>⚙️ Управление кассовыми сменами (Администратор)</h2>
-        <button onClick={syncAllData} style={{ background: '#333', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-          🔄 Обновить данные
-        </button>
       </div>
 
-      {/* Атомная панель кнопок */}
-      <CashDaysControls 
-        onOpenDay={handleOpenDay} 
-        onCloseDay={handleCloseDay} 
-        onEmergencyReopen={handleEmergencyReopen} 
-      />
+      {/* 🔥 АТОМАРНЫЙ ЗАГРУЗЧИК: Оборачивает всё, что зависит от списка дней */}
+      <CashDaysLoader>
+        {({ records, loading, error, reload }) => (
+          <>
+            {/* Атомная панель кнопок */}
+            <CashDaysControls 
+              onOpenDay={() => handleOpenDay(reload)} 
+              onCloseDay={() => handleCloseDay(reload)} 
+              onEmergencyReopen={() => handleEmergencyReopen(reload, records)} 
+            />
 
-      <div style={{ marginTop: '20px' }}>
-        {/* 🔥 ИНТЕГРАЦИЯ ФИНАНСОВОГО ДАШБОРДА: Сюда рендерим верхние карточки выручки и маржи */}
-        <AnalyticsSummaryBlock metrics={metrics} />
-      </div>
+            <div style={{ marginTop: '20px' }}>
+              {/* 🔥 ИНТЕГРАЦИЯ ФИНАНСОВОГО ДАШБОРДА */}
+              <AnalyticsSummaryBlock metrics={metrics} />
+            </div>
 
-      {/* Атомная таблица истории */}
-      {loading ? (
-        <div style={{ color: '#888' }}>Загрузка финансовой истории...</div>
-      ) : (
-        <CashDaysTable records={records} />
-      )}
+            {/* Ошибка загрузки */}
+            {error && (
+              <div style={{ color: '#ff4444', margin: '10px 0', padding: '10px', background: '#2d1f1f', borderRadius: '4px' }}>
+                ❌ {error}
+              </div>
+            )}
+
+            {/* Кнопка обновления */}
+            <button 
+              onClick={reload} 
+              style={{ 
+                margin: '10px 0', 
+                background: '#333', 
+                color: '#fff', 
+                border: 'none', 
+                padding: '6px 12px', 
+                borderRadius: '4px', 
+                cursor: 'pointer', 
+                fontWeight: 'bold' 
+              }}
+            >
+              🔄 Обновить данные
+            </button>
+
+            {/* Атомная таблица истории */}
+            {loading ? (
+              <div style={{ color: '#888' }}>Загрузка финансовой истории...</div>
+            ) : (
+              <CashDaysTable records={records} />
+            )}
+          </>
+        )}
+      </CashDaysLoader>
     </div>
   );
 };

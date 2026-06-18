@@ -1,6 +1,7 @@
 // frontend/src/components/atomic/OrderModal.tsx
 import React, { useState, useEffect } from 'react';
-import { OrderModalItemsTable, PurchaseItem } from './OrderModalItemsTable';
+import { OrderModalItemsTable } from './OrderModalItemsTable';
+import type { PurchaseItem } from './OrderModalItemsTable';
 import { OrderQuickManualAdd } from './OrderQuickManualAdd';
 
 interface Supplier { supplier_id: number; name: string; }
