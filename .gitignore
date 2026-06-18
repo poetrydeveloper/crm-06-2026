@@ -15,4 +15,7 @@ dist/
 Thumbs.db
 
 # Docker
-.docker/
+.docker/infra/backups/
+
+# Бекапы БД (симлинки не поддерживаются Git на Windows)
+infra/backups/
