@@ -6,9 +6,9 @@ class DeficitEngine:
     @staticmethod
     async def run_calculation(engine: AsyncEngine) -> list[dict]:
         """
-        🔥 ЧИСТЫЙ СУБД-АВТОЗАКАЗ:
-        Вычитывает динамические правила закупки и черный список исключений напрямую 
-        из физических таблиц PostgreSQL, полностью исключая RAM-заглушки.
+        🔥 СИНХРОНИЗИРОВАННЫЙ СУБД-АВТОЗАКАЗ:
+        Поддерживает Enterprise-операторы ge/le и возвращает контрактные поля
+        в строгом соответствии с буфером склада ядра розничной сети.
         """
         pre_orders = []
         
@@ -28,11 +28,10 @@ class DeficitEngine:
                     } for r in rules_res.fetchall()
                 ]
 
-                # Если директор ещё не создал ни одного правила, используем эталонную базовую матрицу-фоллбэк
+                # Если директор ещё не создал ни одного правила, используем базовую матрицу-фоллбэк
                 if not active_rules:
                     active_rules = [
-                        {"id": 1, "price_operator": ">", "price_value": 100.0, "name_contains": None, "stock_threshold": 2},
-                        {"id": 2, "price_operator": "<", "price_value": 10.0, "name_contains": "бита", "stock_threshold": 5}
+                        {"id": 1, "price_operator": "ge", "price_value": 500.0, "name_contains": None, "stock_threshold": 2}
                     ]
 
                 # 📡 2. ВЫКАЧ ЧЕРНОГО СПИСКА ИСКЛЮЧЕНИЙ ИЗ ТАБЛИЦЫ purchase_exceptions
@@ -46,7 +45,7 @@ class DeficitEngine:
                 for p in products:
                     p_id, p_name, p_code, p_price = p[0], p[1], p[2], float(p[3] or 0)
                     
-                    # Если товар помечен галочкой "Больше не находить" — намертво баним его в выдаче
+                    # Если товар помечен галочкой "Больше не находить" — баним его в выдаче
                     if p_id in exceptions:
                         continue
 
@@ -60,16 +59,19 @@ class DeficitEngine:
                     is_deficit = False
                     matched_rule_id = 0
                     stock_limit = 0
-                    recommended_qty = 5
 
-                    # Прогоняем товар через скачанную из PostgreSQL матрицу условий снабжения
+                    # Прогоняем товар через матрицу условий снабжения
                     for rule in active_rules:
                         price_match = False
                         rule_price = float(rule["price_value"] or 0)
+                        op = rule["price_operator"]
                         
-                        if rule["price_operator"] == ">" and p_price > rule_price:
+                        # 🔥 ИСПРАВЛЕНО: Поддержка как символьных, так и строковых операторов ge/le из ядра
+                        if op in [">", "ge"] and p_price >= rule_price:
                             price_match = True
-                        elif rule["price_operator"] == "<" and p_price < rule_price:
+                        elif op in ["<", "le"] and p_price <= rule_price:
+                            price_match = True
+                        elif op is None:
                             price_match = True
 
                         name_match = True
@@ -82,18 +84,18 @@ class DeficitEngine:
                                 is_deficit = True
                                 matched_rule_id = rule["id"]
                                 stock_limit = rule["stock_threshold"]
-                                recommended_qty = 15 if "бита" in name_lower else 2
                                 break
 
                     if is_deficit:
+                        # 🔥 ИСПРАВЛЕНО: Вычисляем реальный объем закупки и приводим поля к контракту ядра склада
+                        deficit_qty = int(stock_limit) - int(current_stock)
+                        if deficit_qty <= 0:
+                            deficit_qty = 2
+
                         pre_orders.append({
-                            "pre_order_id": 6000 + p_id,
-                            "product_id": p_id,
-                            "product_name": p_name,
-                            "product_code": p_code,
-                            "risk_level": f"🚨 Правило #{matched_rule_id} (Порог < {stock_limit} шт.) [На полке: {current_stock} шт]",
-                            "recommended_qty": recommended_qty,
-                            "estimated_purchase_price": p_price * 0.6
+                            "product_id": int(p_id),
+                            "deficit_quantity": int(deficit_qty),
+                            "reason": f"Порог < {stock_limit} шт. по правилу #{matched_rule_id}. На полке: {current_stock} шт."
                         })
 
             except Exception as e:

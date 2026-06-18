@@ -45,13 +45,13 @@ async def trigger_supply_chain_calculation():
     
     async with httpx.AsyncClient() as client:
         try:
-            # Путь в ядре настроен как /warehouse/pre-orders/...
-            await client.post(f"{CORE_URL}/warehouse/pre-orders/cache-update", json=computed_pre_orders)
+            # 🔥 ИСПРАВЛЕНО: Добавлен обязательный префикс /api/v1 для синхронизации с ядром склада
+            await client.post(f"{CORE_URL}/api/v1/warehouse/pre-orders/cache-update", json=computed_pre_orders)
         except Exception as e:
             return {"status": "partial_success", "message": f"Расчёт завершён, но буфер ядра недоступен: {str(e)}"}
 
     return {
         "status": "success", 
-        "message": "Аналитический пересчет матриц снабжения завершен. Кэш обновлен.",
+        "message": "Аналитический пересчет матриц снабжения завершен. Кэш updated.",
         "computed_count": len(computed_pre_orders)
     }
