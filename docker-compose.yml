@@ -11,6 +11,11 @@ services:
       - crm_pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm_admin -d crm_main_database"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   browserless:
     image: browserless/chrome:latest
@@ -32,7 +37,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   logger:
     build: ./services/logger
@@ -57,7 +63,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -92,9 +99,9 @@ services:
       - backend
       - analyzer
 
-  # 🛡️ АВТОНОМНЫЙ КОНТЕЙНЕР БЭКАПОВ (ИНКРЕМЕНТАЛЬНЫЕ ПАЗЛЫ)
+  # 🔥 БЭКАП: Каждый час + мгновенный дамп при старте
   backup:
-    image: prodrigestivill/postgres-backup-local:16-alpine
+    image: prodrigestivill/postgres-backup-local:latest
     container_name: crm_backup_service
     restart: always
     user: "postgres:postgres"
@@ -105,23 +112,24 @@ services:
       - POSTGRES_DB=crm_main_database
       - POSTGRES_USER=crm_admin
       - POSTGRES_PASSWORD=crm_secure_password
-      - POSTGRES_EXTRA_OPTS=-Z 9 --schema=public # Максимальный уровень сжатия gzip
-      - BACKUP_NUM_KEEP=30                        # Хранить историю за последние 30 дней
-      - BACKUP_FREQUENCY=daily                    # Автозапуск раз в день (резервный триггер)
-      - BACKUP_TIME=2355                          # Основной запуск в 23:55 при закрытии дня
+      - POSTGRES_EXTRA_OPTS=-Z 9
+      - BACKUP_NUM_KEEP=30
+      - BACKUP_FREQUENCY=60m
+      - BACKUP_ON_START=TRUE
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
-  # 📊 Визуальный веб-интерфейс для просмотра таблиц БД
   adminer:
     image: adminer:latest
     container_name: crm_db_manager
     restart: always
     ports:
-      - "8080:8080" # Открываем порт 8080 для браузера
+      - "8080:8080"
     depends_on:
-      - db
-  
+      db:
+        condition: service_healthy
+
   qa_orchestrator:
     build: ./services/qa_orchestrator
     container_name: crm_qa_orchestrator
@@ -134,9 +142,12 @@ services:
       - GATEWAY_URL=http://gateway:80
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
     depends_on:
-      - gateway
-      - db
-      - browserless
+      gateway:
+        condition: service_started
+      db:
+        condition: service_healthy
+      browserless:
+        condition: service_started
     deploy:
       resources:
         limits:
