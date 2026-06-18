@@ -4,22 +4,32 @@ from datetime import datetime
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from src.models import CashDay
 
 class CashDayManager:
     @staticmethod
     async def open_day(payload: dict, db: AsyncSession) -> dict:
-        existing = await db.execute(select(CashDay).where(CashDay.is_closed == False))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="В системе уже есть открытая кассовая смена")
-
         date_str = payload.get("date")
-        parsed_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if date_str else datetime.utcnow()
+        parsed_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None) if date_str else datetime.utcnow().replace(tzinfo=None)
         
-        new_day = CashDay(date=parsed_date, is_closed=False, total_revenue=Decimal("0.00"))
+        # 🔒 ВАЛИДАЦИЯ: Проверяем, нет ли уже смены на эту дату (любого статуса)
+        existing = await db.execute(
+            select(CashDay).where(CashDay.date == parsed_date.date())
+        )
+        day = existing.scalar_one_or_none()
+        
+        if day and not day.is_closed:
+            raise HTTPException(status_code=400, detail="❌ Смена на сегодня уже открыта! Сначала закройте текущую.")
+        
+        if day and day.is_closed:
+            raise HTTPException(status_code=400, detail="❌ Смена на сегодня уже закрыта! Используйте кнопку 'Переоткрыть'.")
+        
+        # Создаём новую смену
+        new_day = CashDay(date=parsed_date.date(), is_closed=False, total_revenue=Decimal("0.00"))
         db.add(new_day)
         await db.commit()
+        await db.refresh(new_day)
         return {"status": "success", "cash_day_id": new_day.id, "message": "Кассовая смена успешно открыта"}
 
     @staticmethod
@@ -29,7 +39,7 @@ class CashDayManager:
         active_day = result.scalar_one_or_none()
         
         if not active_day:
-            raise HTTPException(status_code=400, detail="В системе нет открытых кассовых смен")
+            raise HTTPException(status_code=400, detail="❌ В системе нет открытых кассовых смен!")
             
         active_day.is_closed = True
         await db.commit()

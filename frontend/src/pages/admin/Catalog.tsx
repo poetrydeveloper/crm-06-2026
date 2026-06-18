@@ -23,46 +23,46 @@ export const Catalog: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 📥 1. Загрузка категорий из бэкенда ядра
+  // 🗺️ Построить цепочку родителей для выбранной категории
+  const getCategoryPath = (catId: number | null): string => {
+    if (!catId) return 'Корень каталога';
+    const path: string[] = [];
+    let currentId: number | null = catId;
+    while (currentId) {
+      const cat = categories.find(c => c.id === currentId);
+      if (!cat) break;
+      path.unshift(cat.name);
+      currentId = cat.parent_id;
+    }
+    return path.join(' → ');
+  };
+
   const loadCategories = async () => {
     try {
       const response = await fetch('/api/v1/catalog/categories');
       if (response.ok) {
         const data = await response.json();
-        // Защита от получения объекта вместо массива категорий
-        if (Array.isArray(data)) {
-          setCategories(data);
-        } else if (data && Array.isArray(data.categories)) {
-          setCategories(data.categories);
-        } else if (data && Array.isArray(data.data)) {
-          setCategories(data.data);
-        }
+        if (Array.isArray(data)) setCategories(data);
+        else if (data?.categories) setCategories(data.categories);
+        else if (data?.data) setCategories(data.data);
       }
     } catch (error) {
       console.error('Ошибка загрузки категорий:', error);
     }
   };
 
-  // 📥 2. Загрузка товаров с авто-распаковкой структур бэкенда
   const loadProducts = async () => {
     try {
       const response = await fetch('/api/v1/catalog/debug-db-raw-product');
       if (response.ok) {
         const data = await response.json();
-        
-        // 🔥 Умный маппинг структуры ответа бэкенда
-        if (Array.isArray(data)) {
-          setProducts(data);
-        } else if (data && Array.isArray(data.products)) {
-          setProducts(data.products);
-        } else if (data && Array.isArray(data.data)) {
-          setProducts(data.data);
-        } else {
-          setProducts([]);
-        }
+        if (Array.isArray(data)) setProducts(data);
+        else if (data?.products) setProducts(data.products);
+        else if (data?.data) setProducts(data.data);
+        else setProducts([]);
       }
     } catch (error) {
-      console.error('Ошибка loading products:', error);
+      console.error('Ошибка загрузки товаров:', error);
       setProducts([]);
     }
   };
@@ -72,49 +72,47 @@ export const Catalog: React.FC = () => {
     loadProducts();
   }, []);
 
-  // 🔍 3. Логика Умного Поиска (Интеграция с GET /api/v1/catalog/search)
   useEffect(() => {
     if (!searchQuery) {
       loadProducts();
       return;
     }
-
     const delayDebounceFn = setTimeout(async () => {
       try {
         const response = await fetch(`/api/v1/catalog/search?q=${encodeURIComponent(searchQuery)}`);
         if (response.ok) {
           const data = await response.json();
-          
-          // 🔥 Защита от объекта в результатах поиска
-          if (Array.isArray(data)) {
-            setProducts(data);
-          } else if (data && Array.isArray(data.products)) {
-            setProducts(data.products);
-          } else if (data && Array.isArray(data.data)) {
-            setProducts(data.data);
-          }
+          if (Array.isArray(data)) setProducts(data);
+          else if (data?.products) setProducts(data.products);
+          else if (data?.data) setProducts(data.data);
         }
       } catch (error) {
         console.error('Ошибка умного поиска:', error);
       }
     }, 300);
-
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
-  // 🛠️ 4. Категорийный CRUD
+  // 🛠️ Категорийный CRUD
   const handleCreateCategory = async () => {
-    const name = prompt('Введите название новой категории:');
+    const path = getCategoryPath(selectedCategoryId);
+    const name = prompt(`📂 Место: ${path}\n\nВведите название новой категории:`);
     if (!name) return;
     try {
       const response = await fetch('/api/v1/catalog/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, parent_id: selectedCategoryId })
+        body: JSON.stringify({ name: name.trim(), parent_id: selectedCategoryId })
       });
-      if (response.ok) loadCategories();
+      const data = await response.json();
+      if (response.ok) {
+        loadCategories();
+      } else {
+        alert(data.detail || 'Ошибка создания категории');
+      }
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети при создании категории');
     }
   };
 
@@ -123,29 +121,41 @@ export const Catalog: React.FC = () => {
     const name = prompt('Редактировать название категории:', cat?.name);
     if (!name) return;
     try {
-      await fetch(`/api/v1/catalog/categories/${id}`, {
+      const response = await fetch(`/api/v1/catalog/categories/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, parent_id: cat?.parent_id || null })
+        body: JSON.stringify({ name: name.trim(), parent_id: cat?.parent_id || null })
       });
-      loadCategories();
+      const data = await response.json();
+      if (response.ok) {
+        loadCategories();
+      } else {
+        alert(data.detail || 'Ошибка редактирования категории');
+      }
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети');
     }
   };
 
   const handleDeleteCategory = async (id: number) => {
     if (!confirm('Удалить эту категорию?')) return;
     try {
-      await fetch(`/api/v1/catalog/categories/${id}`, { method: 'DELETE' });
-      loadCategories();
-      if (selectedCategoryId === id) setSelectedCategoryId(null);
+      const response = await fetch(`/api/v1/catalog/categories/${id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (response.ok) {
+        loadCategories();
+        if (selectedCategoryId === id) setSelectedCategoryId(null);
+      } else {
+        alert(data.detail || 'Ошибка удаления категории');
+      }
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети');
     }
   };
 
-  // 🛠️ 5. Товарный CRUD
+  // 🛠️ Товарный CRUD
   const handleCreateProduct = async () => {
     if (!selectedCategoryId) {
       alert('Сначала выберите категорию в дереве слева!');
@@ -157,19 +167,25 @@ export const Catalog: React.FC = () => {
     if (!name || !code || !priceStr) return;
 
     try {
-      await fetch('/api/v1/catalog/products', {
+      const response = await fetch('/api/v1/catalog/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          code,
+          name: name.trim(),
+          code: code.trim(),
           recommended_retail_price: parseFloat(priceStr),
           category_id: selectedCategoryId
         })
       });
-      loadProducts();
+      const data = await response.json();
+      if (response.ok) {
+        loadProducts();
+      } else {
+        alert(data.detail || 'Ошибка создания товара');
+      }
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети');
     }
   };
 
@@ -181,18 +197,24 @@ export const Catalog: React.FC = () => {
     if (!name || !priceStr) return;
 
     try {
-      await fetch(`/api/v1/catalog/products/${id}`, {
+      const response = await fetch(`/api/v1/catalog/products/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
+          name: name.trim(),
           recommended_retail_price: parseFloat(priceStr),
           category_id: prod.category_id
         })
       });
-      loadProducts();
+      const data = await response.json();
+      if (response.ok) {
+        loadProducts();
+      } else {
+        alert(data.detail || 'Ошибка редактирования товара');
+      }
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети');
     }
   };
 
@@ -203,26 +225,24 @@ export const Catalog: React.FC = () => {
       loadProducts();
     } catch (error) {
       console.error(error);
+      alert('Ошибка сети');
     }
   };
 
-  // 🔥 БЕЗОПАСНАЯ ФИЛЬТРАЦИЯ: Страница больше никогда не выдаст TypeError
   const filteredProducts = Array.isArray(products)
-    ? products.filter(prod => {
-        return searchQuery ? true : (selectedCategoryId ? prod.category_id === selectedCategoryId : true);
-      })
+    ? products.filter(prod => searchQuery ? true : (selectedCategoryId ? prod.category_id === selectedCategoryId : true))
     : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
-      <div style={{ background: '#1a1a1a', padding: '10px 20px', borderBottom: '1px solid #333' }}>
+      <div style={{ background: '#1a1a1a', padding: '10px 20px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: '15px' }}>
         <input
           type="text"
           placeholder="🔍 Умный поиск товаров по названию или артикулу..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
-            width: '100%',
+            flex: 1,
             maxWidth: '500px',
             padding: '8px 12px',
             borderRadius: '4px',
@@ -232,6 +252,10 @@ export const Catalog: React.FC = () => {
             outline: 'none'
           }}
         />
+        {/* 🗺️ Показывает текущий путь */}
+        <span style={{ color: '#888', fontSize: '13px' }}>
+          📂 {getCategoryPath(selectedCategoryId)}
+        </span>
       </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

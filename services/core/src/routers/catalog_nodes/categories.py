@@ -8,16 +8,12 @@ from src.schemas.catalog import CategoryCreate
 
 router = APIRouter(prefix="/categories", tags=["Каталог: Категории"])
 
-def transform_to_snake_case(text: str) -> str:
-    if not text:
-        return ""
-    return "_".join(text.lower().strip().split())
-
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
-    transformed_name = transform_to_snake_case(payload.name)
-    
-    existing = await db.execute(select(Category).where(Category.name == transformed_name))
+    # Проверяем дубликат по ЧЕЛОВЕЧЕСКОМУ имени
+    existing = await db.execute(
+        select(Category).where(Category.name == payload.name.strip())
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
 
@@ -25,11 +21,12 @@ async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(ge
         parent = await db.get(Category, payload.parent_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Родительская категория не найдена")
-            
-    new_category = Category(name=transformed_name, parent_id=payload.parent_id)
+    
+    # Сохраняем человеческое имя
+    new_category = Category(name=payload.name.strip(), parent_id=payload.parent_id)
     db.add(new_category)
     await db.commit()
-    return {"status": "success", "category_id": new_category.id, "name": transformed_name}
+    return {"status": "success", "category_id": new_category.id, "name": new_category.name}
 
 @router.get("", response_model=list[dict])
 async def get_categories(db: AsyncSession = Depends(get_db)):
@@ -42,7 +39,7 @@ async def update_category(category_id: int, payload: CategoryCreate, db: AsyncSe
     if not category:
         raise HTTPException(status_code=404, detail="Категория не найдена")
     
-    category.name = transform_to_snake_case(payload.name)
+    category.name = payload.name.strip()
     if payload.parent_id:
         category.parent_id = payload.parent_id
     await db.commit()
