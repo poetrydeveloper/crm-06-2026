@@ -26,16 +26,6 @@ async def execute_deficit_cron_job():
         except Exception as e:
             print(f"❌ [CRON]: Сбой отправки кэша в ядро: {str(e)}")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """⏳ Настройка и запуск планировщика при старте контейнера"""
-    scheduler = BackgroundScheduler()
-    # Настраиваем интервал строго раз в 5 минут (300 секунд)
-    scheduler.add_job(lambda: import_and_run_async(), 'interval', minutes=5, id='deficit_calc_job')
-    scheduler.start()
-    yield
-    scheduler.shutdown()
-
 def import_and_run_async():
     """Служебный мост для запуска асинхронной задачи в синхронном потоке APScheduler"""
     import asyncio
@@ -45,7 +35,18 @@ def import_and_run_async():
     except RuntimeError:
         asyncio.run(execute_deficit_cron_job())
 
-app = FastAPI(title="CRM Analytics Service", version="1.0.0", lifespan=lifpan)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """⏳ Настройка и запуск планировщика при старте контейнера"""
+    scheduler = BackgroundScheduler()
+    # 🔥 ИСПРАВЛЕНО: Прямая передача ссылки на функцию
+    scheduler.add_job(import_and_run_async, 'interval', minutes=5, id='deficit_calc_job')
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+# 🔥 ИСПРАВЛЕНО: Корректное имя аргумента lifespan
+app = FastAPI(title="CRM Analytics Service", version="1.0.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health_check():
