@@ -1,6 +1,5 @@
 // frontend/src/pages/admin/ReturnsLog.tsx
 import React, { useState, useEffect } from 'react';
-import { ReturnsLogTable } from '../../components/atomic/ReturnsLogTable';
 
 interface LogRecord {
   service: string;
@@ -10,6 +9,42 @@ interface LogRecord {
   timestamp: string;
 }
 
+// 🔥 ВСТРОЕНО ИНЛАЙН ДЛЯ ЛИКВИДАЦИИ ОШИБКИ ИМПОРТА VITE
+const LocalReturnsLogTable: React.FC<{ logs: LogRecord[] }> = ({ logs }) => {
+  return (
+    <div className="returns-log-table-container" style={{ background: '#1e1e1e', borderRadius: '6px', overflow: 'hidden' }}>
+      <table style={{ width: 100 + '%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <thead style={{ background: '#2d2d2d', color: '#ffb74d' }}>
+          <tr>
+            <th style={{ padding: '12px' }}>Временная метка</th>
+            <th style={{ padding: '12px' }}>Микросервис</th>
+            <th style={{ padding: '12px' }}>Код</th>
+            <th style={{ padding: '12px' }}>Лог-сообщение аудита</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.length === 0 ? (
+            <tr>
+              <td colSpan={4} style={{ padding: '20px', color: '#888', textAlign: 'center' }}>
+                Журнал пуст. Кассовых событий возврата не обнаружено.
+              </td>
+            </tr>
+          ) : (
+            logs.map((log, idx) => (
+              <tr key={idx} className="payment-form-active" style={{ borderBottom: '1px solid #333' }}>
+                <td style={{ padding: '12px', color: '#aaa' }}>{log.timestamp}</td>
+                <td style={{ padding: '12px' }}>{log.service}</td>
+                <td style={{ padding: '12px', color: '#ffb74d' }}>{log.operation_code}</td>
+                <td style={{ padding: '12px' }}>{log.message}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export const ReturnsLog: React.FC = () => {
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,7 +52,6 @@ export const ReturnsLog: React.FC = () => {
   const loadReturnsHistory = async () => {
     setLoading(true);
     try {
-      // Запрашиваем данные логгера через роут шлюза
       const response = await fetch('/api/v1/logs/search?operation_code=0501');
       if (response.ok) {
         const data = await response.json();
@@ -54,7 +88,7 @@ export const ReturnsLog: React.FC = () => {
       {loading ? (
         <div style={{ color: '#888' }}>Вычитывание буфера логгера...</div>
       ) : (
-        <ReturnsLogTable logs={logs} />
+        <LocalReturnsLogTable logs={logs} />
       )}
     </div>
   );

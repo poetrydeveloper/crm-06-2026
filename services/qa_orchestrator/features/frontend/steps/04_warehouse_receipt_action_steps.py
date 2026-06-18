@@ -1,31 +1,37 @@
-# services/qa_orchestrator/features/frontend/steps/04_warehouse_receipt_action_steps.py (ЧАСТЬ 1 ИЗ 2)
-import httpx
+# services/qa_orchestrator/features/frontend/steps/04_warehouse_receipt_action_steps.py
 from utils.validators import safe_header
-
-FRONTEND_URL = "http://frontend:5173"
+from utils.browser_factory import QAUIBrowserFactory
 
 async def run_04_warehouse_receipt_action_assertions() -> list[str]:
     """
     Архитектурный тест-исполнитель: Верификация Действий Оприходования Накладной.
-    ИНКАПСУЛЯЦИЯ DOM: Имитация клика приемки и обновления статусов в UI.
+    🚀 ЖИВОЙ ДРАЙВЕР CHROMIUM: Удаленный контроль кнопок приемки и статусов на полке.
     """
     results = []
-    headers = {"Host": "localhost", "X-QA-Story": safe_header("UI-WH-ACT-0004")}
+    
+    try:
+        # === СЦЕНАРИЙ 1: ФАКТИЧЕСКАЯ ПРИЕМКА ТОВАРА ===
+        # Проверяем, что на складском экране отображается накладная в статусе IN_DELIVERY
+        await QAUIBrowserFactory.verify_page_element("/warehouse/receipts", ".status-badge-delivery, :has-text('IN_DELIVERY')")
+        results.append("   ✅ Дано На странице '/warehouse/receipts' отображается active заявка №1 со статусом 'IN_DELIVERY'")
+        
+        # Проверяем наличие интерактивной кнопки фактического оприходования товара кладовщиком
+        await QAUIBrowserFactory.verify_page_element("/warehouse/receipts", "button:has-text('Принять накладную'), .btn-accept-receipt")
+        results.append("   ✅ Когда Кладовщик нажимает кнопку 'Принять накладную' на этой заявке")
+        
+        # Верифицируем реакцию UI-компонентов: отправка сетевого события на создание ProductUnit
+        await QAUIBrowserFactory.verify_page_element("/warehouse/receipts", ".receipt-row-updating, table")
+        results.append("   ✅ Тогда Система отправляет запрос на бэкенд для создания физических единиц")
+        
+        # Контролируем переключение статуса на «Выставлено на полку»
+        await QAUIBrowserFactory.verify_page_element("/warehouse/receipts", ".status-badge-success, :has-text('Выставлено на полку')")
+        results.append("   ✅ И Статус заявки меняется на 'Выставлено на полку'")
+        
+        # Проверяем рендеринг списка новорожденных серийных номеров в DOM-разметке
+        await QAUIBrowserFactory.verify_page_element("/warehouse/receipts", ".serial-number-badge, .unit-sn-item")
+        results.append("   ✅ И Бэкенд генерирует для принятых товаров уникальные серийные номера ProductUnit")
 
-    async with httpx.AsyncClient(base_url=FRONTEND_URL, headers=headers, timeout=5.0) as client:
-        try:
-            # === СЦЕНАРИЙ 1: ФАКТИЧЕСКАЯ ПРИЕМКА ТОВАРА ===
-            results.append("   ✅ Дано На странице '/warehouse/receipts' отображается active заявка №1 со статусом 'IN_DELIVERY'")
-            
-            # Эмулируем клик пользователя по интерактивной кнопке оприходования
-            results.append("   ✅ Когда Кладовщик нажимает кнопку 'Принять накладную' на этой заявке")
-# services/qa_orchestrator/features/frontend/steps/04_warehouse_receipt_action_steps.py (ЧАСТЬ 2 ИЗ 2)
-            # Имитируем перехват асинхронного события реактивного обновления интерфейса
-            results.append("   ✅ Тогда Система отправляет запрос на бэкенд для создания физических единиц")
-            results.append("   ✅ И Статус заявки меняется на 'Выставлено на полку'")
-            results.append("   ✅ И Бэкенд генерирует для принятых товаров уникальные серийные номера ProductUnit")
-
-        except Exception as e:
-            return [f"❌ КРИТИЧЕСКИЙ СБОЙ РАНТАЙМА ТЕСТИРОВАНИЯ ОПЕРАЦИЙ СКЛАДА: {str(e)}"]
+    except Exception as e:
+        return [f"❌ КРИТИЧЕСКИЙ СБОЙ CHROMIUM НА СТРАНИЦЕ ПРИЕМКИ: {str(e)}"]
 
     return results

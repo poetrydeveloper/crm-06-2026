@@ -12,6 +12,17 @@ services:
     ports:
       - "5432:5432"
 
+  browserless:
+    image: browserless/chrome:latest
+    container_name: crm_browserless
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - MAX_CONCURRENT_SESSIONS=5
+      - DEMO_MODE=false
+      - CONNECTION_TIMEOUT=60000
+
   backend:
     build: ./services/core
     container_name: crm_backend_core
@@ -125,10 +136,12 @@ services:
     depends_on:
       - gateway
       - db
+      - browserless
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 256M
+
 volumes:
   crm_pg_data:

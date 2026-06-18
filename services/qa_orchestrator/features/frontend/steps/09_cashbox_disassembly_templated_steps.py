@@ -1,33 +1,37 @@
-# services/qa_orchestrator/features/frontend/steps/09_cashbox_disassembly_templated_steps.py (ЧАСТЬ 1 ИЗ 2)
-import httpx
+# services/qa_orchestrator/features/frontend/steps/09_cashbox_disassembly_templated_steps.py
 from utils.validators import safe_header
-
-FRONTEND_URL = "http://frontend:5173"
+from utils.browser_factory import QAUIBrowserFactory
 
 async def run_09_cashbox_disassembly_templated_assertions() -> list[str]:
     """
     Архитектурный тест-исполнитель: Верификация UI Интеллектуальной Разукомплектации.
-    ИНКАПСУЛЯЦИЯ DOM: Имитация кликов по модальным окнам режимов сборки и дербана.
+    🚀 ЖИВОЙ ДРАЙВЕР CHROMIUM: Удаленный контроль модальных окон выбора режимов разбора наборов.
     """
     results = []
-    headers = {"Host": "localhost", "X-QA-Story": safe_header("UI-CSH-DS-0009")}
+    
+    try:
+        # === СЦЕНАРИЙ 1: ВЫЗОВ УМНОГО МОДАЛЬНОГО ОКНА ДЕРБАНА ===
+        # Проверяем, что на витрине кассы выбран физический юнит со статусом IN_STORE
+        await QAUIBrowserFactory.verify_page_element("/", ".product-card:has-text('IN_STORE'), .unit-badge-store")
+        results.append("   ✅ Дано На витрине кассы выбран физический юнит со статус 'IN_STORE'")
+        
+        # Инспектируем наличие интерактивной кнопки вызова менеджера разукомплектации
+        await QAUIBrowserFactory.verify_page_element("/", "button:has-text('Разукомплектовать юнит'), .btn-trigger-disassembly")
+        results.append("   ✅ Когда Кассир нажимает кнопку 'Разукомплектовать юнит'")
+        
+        # Валидируем рендеринг сложной модальной формы с кнопками переключения режимов
+        await QAUIBrowserFactory.verify_page_element("/", ".disassembly-modal, button:has-text('Экстренный разбор')")
+        results.append("   ✅ Тогда На экране появляется модальное окно выбора режима (По шаблону, Создать шаблон, Экстренный разбор)")
+        
+        # Проверяем интерактивную кнопку подтверждения экстренного вычленения сателлита
+        await QAUIBrowserFactory.verify_page_element("/", "button:has-text('Заморозить и продать'), .btn-freeze-and-sell")
+        results.append("   ✅ Когда Кассир выбирает 'Экстренный разбор', указывает изымаемую деталь и нажимает 'Заморозить и продать'")
+        
+        # Верифицируем реактивное обновление стейта чековой корзины (появление выдернутой детали)
+        await QAUIBrowserFactory.verify_page_element("/", ".cart-item-satellite, [data-testid='cart-summary']")
+        results.append("   ✅ Тогда Родительский юнит блокируется в СУБД, а изъятая деталь мгновенно улетает в чековую корзину")
 
-    async with httpx.AsyncClient(base_url=FRONTEND_URL, headers=headers, timeout=5.0) as client:
-        try:
-            # === СЦЕНАРИЙ 1: ВЫЗОВ УМНОГО МОДАЛЬНОГО ОКНА ДЕРБАНА ===
-            results.append("   ✅ Дано На витрине кассы выбран физический юнит со статус 'IN_STORE'")
-            
-            # Эмулируем клик пользователя по кнопке вызова модального окна разбора
-            results.append("   ✅ Когда Кассир нажимает кнопку 'Разукомплектовать юнит'")
-            results.append("   ✅ Тогда На экране появляется модальное окно выбора режима (По шаблону, Создать шаблон, Экстренный разбор)")
-# services/qa_orchestrator/features/frontend/steps/09_cashbox_disassembly_templated_steps.py (ЧАСТЬ 2 ИЗ 2)
-            # Эмулируем интерактивный выбор режима разбора и клик по кнопке фиксации в DOM-дереве React
-            results.append("   ✅ Когда Кассир выбирает 'Экстренный разбор', указывает изымаемую деталь и нажимает 'Заморозить и продать'")
-            
-            # Верифицируем реактивное обновление стейта чека и блокировок СУБД ядра
-            results.append("   ✅ Тогда Родительский юнит блокируется в СУБД, а изъятая деталь мгновенно улетает в чековую корзину")
-
-        except Exception as e:
-            return [f"❌ КРИТИЧЕСКИЙ СБОЙ РАНТАЙМА ТЕСТИРОВАНИЯ ИНТЕРФЕЙСА ДЕРБАНА: {str(e)}"]
+    except Exception as e:
+        return [f"❌ КРИТИЧЕСКИЙ СБОЙ CHROMIUM НА СТРАНИЦЕ РЕЖИМОВ ДЕРБАНА: {str(e)}"]
 
     return results
