@@ -1,9 +1,14 @@
 # services/core/src/routers/warehouse_nodes/pre_orders.py
 from fastapi import APIRouter, status
-# 🔥 ИСПРАВЛЕНО: Прописан корректный путь к файлу компонента
 from src.components.analyzer_cache_manager import AnalyzerCacheManager 
 
 router = APIRouter(tags=["Склад: Аналитика и Предзаказы"])
+
+# 🔥 НОВЫЙ ЭНДПОИНТ: Получить список предзаказов
+@router.get("/pre-orders", status_code=200)
+async def list_pre_orders():
+    """📋 Получить список всех предзаказов (из кэша анализатора)"""
+    return await AnalyzerCacheManager.get_cached_pre_orders()
 
 @router.post("/pre-orders/cache-update", status_code=200)
 async def update_pre_orders_cache_from_analyzer(payload: list[dict]):
