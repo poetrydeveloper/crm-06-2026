@@ -13,6 +13,26 @@ from src.components.return_manager import ReturnManager
 
 router = APIRouter(prefix="/cash", tags=["Кассовый узел и Продажи"])
 
+@router.get("/days", status_code=200)
+async def list_cash_days(db: AsyncSession = Depends(get_db)):
+    """📋 Получить список всех кассовых дней (история смен)"""
+    result = await db.execute(
+        select(CashDay).order_by(CashDay.created_at.desc()).limit(100)
+    )
+    days = result.scalars().all()
+    return {
+        "days": [
+            {
+                "id": day.id,
+                "created_at": str(day.created_at),
+                "status": "ЗАКРЫТА" if day.is_closed else "ОТКРЫТА",
+                "total_sales": day.total_sales if hasattr(day, 'total_sales') else 0
+            }
+            for day in days
+        ],
+        "total": len(days)
+    }
+
 class CashReturnPayload(BaseModel):
     unique_serial_number: str
     return_reason: str = "Возврат от покупателя"
