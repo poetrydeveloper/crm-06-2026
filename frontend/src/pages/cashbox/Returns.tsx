@@ -16,7 +16,6 @@ export const Returns: React.FC = () => {
   const [relation, setRelation] = useState<RelationData | null>(null);
   const [returnReason, setReturnReason] = useState('Возврат от покупателя');
 
-  // 🔍 1. Предварительный аудит связей детали перед возвратом
   const handleCheckRelation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!serialNumber.trim()) return;
@@ -28,17 +27,16 @@ export const Returns: React.FC = () => {
         const data = await response.json();
         setRelation(data);
       } else {
-        setRelation({ has_parent_relation: false, message: 'Ошибка связи с СУБД при аудите серийного номера' });
+        setRelation({ has_parent_relation: false, message: 'Ошибка проверки серийного номера' });
       }
     } catch (error) {
-      console.error('Ошибка проверки связей:', error);
-      setRelation({ has_parent_relation: false, message: 'Сетевой сбой кассового узла' });
+      console.error(error);
+      setRelation({ has_parent_relation: false, message: 'Сетевой сбой' });
     } finally {
       setLoading(false);
     }
   };
 
-  // 🔄 2. Проведение транзакции возврата (POST /api/v1/cash/returns)
   const handleExecuteReturn = async () => {
     if (!serialNumber.trim()) return;
 
@@ -48,77 +46,66 @@ export const Returns: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           unique_serial_number: serialNumber.trim(),
-          return_reason: returnReason
-        })
+          return_reason: returnReason,
+        }),
       });
 
       if (response.ok) {
-        alert('🎉 Товар успешно принят обратно на баланс! Юнит переведен в статус IN_STORE и выставлен на кассу.');
+        alert('Товар возвращён на баланс. Статус: IN_STORE');
         setSerialNumber('');
         setRelation(null);
       } else {
         const errData = await response.json();
-        alert(`Ошибка проведения возврата: ${errData.detail || 'Сбой СУБД'}`);
+        alert(`Ошибка: ${errData.detail || 'Сбой'}`);
       }
     } catch (error) {
-      console.error('Ошибка сети при возврате:', error);
+      console.error(error);
     }
   };
 
-  // ⚙️ 3. SPA-переход на экран комплектации наборов, если обнаружен LOST-родитель
   const handleNavigateToAssembly = () => {
     window.history.pushState({}, '', '/warehouse');
     window.dispatchEvent(new Event('popstate'));
   };
 
   return (
-    <div style={{ padding: '20px', background: '#121212', color: '#fff', minHeight: 'calc(100vh - 60px)' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, color: '#4fa8ff' }}>🔄 Оформление возвратов от покупателей (Команда 0403)</h2>
-        <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#666' }}>Интеллектуальный контроль комплектности и автоматический аудит раздербаненных наборов</p>
+    <div className="page-content">
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Оформление возвратов</h2>
+          <p className="text-muted" style={{ marginTop: '4px' }}>Контроль комплектности и аудит наборов</p>
+        </div>
       </div>
 
-      {/* Атомный блок сканирования/поиска */}
-      <ReturnSearchBlock 
-        serialNumber={serialNumber} 
-        onSerialChange={setSerialNumber} 
-        onCheckRelation={handleCheckRelation} 
-        isLoading={loading} 
+      <ReturnSearchBlock
+        serialNumber={serialNumber}
+        onSerialChange={setSerialNumber}
+        onCheckRelation={handleCheckRelation}
+        isLoading={loading}
       />
 
-      {/* Атомный умный индификатор связей */}
-      <ReturnAlertBlock 
-        relation={relation} 
-        onNavigateToAssembly={handleNavigateToAssembly} 
-      />
+      <ReturnAlertBlock relation={relation} onNavigateToAssembly={handleNavigateToAssembly} />
 
-      {/* Блок подтверждения и проведения возврата (рендерится только если товар найден) */}
       {relation && (
-        <div style={{ background: '#1a1a1a', padding: '20px', borderRadius: '6px', border: '1px solid #333' }}>
-          <h3 style={{ margin: '0 0 15px 0', color: '#fff' }}>📝 Подтверждение кассовой операции</h3>
-          
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Укажите причину возврата товара:</label>
-            <input 
-              type="text" 
-              value={returnReason} 
-              onChange={(e) => setReturnReason(e.target.value)} 
-              style={{ width: '100%', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px' }} 
+        <div className="card">
+          <h3 className="card-title">Подтверждение операции</h3>
+
+          <div className="form-group">
+            <label className="form-label">Причина возврата</label>
+            <input
+              type="text"
+              className="form-control"
+              value={returnReason}
+              onChange={(e) => setReturnReason(e.target.value)}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button 
-              onClick={() => { setSerialNumber(''); setRelation(null); }} 
-              style={{ flex: 1, padding: '10px', background: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-            >
+          <div className="d-flex gap-8">
+            <button className="btn btn-outline" onClick={() => { setSerialNumber(''); setRelation(null); }}>
               Отмена
             </button>
-            <button 
-              onClick={handleExecuteReturn} 
-              style={{ flex: 1, padding: '10px', background: '#e65100', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              🔄 Пробить чек возврата
+            <button className="btn btn-warning" onClick={handleExecuteReturn}>
+              Провести возврат
             </button>
           </div>
         </div>

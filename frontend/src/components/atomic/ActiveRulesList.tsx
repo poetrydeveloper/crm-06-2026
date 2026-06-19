@@ -14,43 +14,26 @@ interface ActiveRulesListProps {
 }
 
 export const ActiveRulesList: React.FC<ActiveRulesListProps> = ({ rules }) => {
+  if (rules.length === 0) {
+    return (
+      <div className="card mb-3">
+        <p className="text-muted" style={{ margin: 0 }}>Правила не заданы. Используется базовый порог дефицита.</p>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ 
-      background: '#1a1a1a', padding: '20px', borderRadius: '6px', 
-      border: '1px solid #333', marginBottom: '25px' 
-    }}>
-      <h3 style={{ margin: '0 0 12px 0', color: '#aaa', fontSize: '13px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-        📋 Текущие активные матрицы автозаказа (Теги СУБД)
-      </h3>
-      
-      {rules.length === 0 ? (
-        <div style={{ color: '#555', fontSize: '13px' }}>Динамические правила в конструкторе отсутствуют. Система использует базовый порог дефицита.</div>
-      ) : (
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {rules.map(rule => (
-            <div key={rule.id} style={{ 
-              background: '#2d2d2d', 
-              border: '1px solid #444', 
-              padding: '6px 12px', 
-              borderRadius: '20px',
-              fontSize: '13px',
-              color: '#4fa8ff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <span style={{ fontWeight: 'bold', color: '#888' }}>#{rule.id}</span>
-              <span>Цена {rule.price_operator} {rule.price_value} ₽</span>
-              {rule.name_contains && (
-                <span style={{ background: '#1b3a4b', color: '#81c784', padding: '1px 6px', borderRadius: '3px', fontSize: '11px' }}>
-                  текст: "{rule.name_contains}"
-                </span>
-              )}
-              <span style={{ color: '#ffb74d' }}>➡️ порог &lt; {rule.stock_threshold} шт</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="card mb-3">
+      <h3 className="card-title">Активные правила</h3>
+      <div className="d-flex gap-8 flex-wrap">
+        {rules.map((rule) => (
+          <span key={rule.id} className="badge badge-info" style={{ fontSize: '13px', padding: '6px 12px' }}>
+            Цена {rule.price_operator} {rule.price_value} ₽
+            {rule.name_contains && <> — «{rule.name_contains}»</>}
+            {' → '}остаток &lt; {rule.stock_threshold} шт.
+          </span>
+        ))}
+      </div>
     </div>
   );
 };

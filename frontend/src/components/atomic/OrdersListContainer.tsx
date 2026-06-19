@@ -23,18 +23,15 @@ interface OrdersListContainerProps {
 export const OrdersListContainer: React.FC<OrdersListContainerProps> = ({ orders, emptyMessage }) => {
   if (orders.length === 0) {
     return (
-      <div style={{ 
-        padding: '40px', background: '#1a1a1a', borderRadius: '8px', 
-        border: '1px solid #333', textAlign: 'center', color: '#555' 
-      }}>
-        {emptyMessage}
+      <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+        <p className="text-muted">{emptyMessage}</p>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-      {orders.map(order => (
+    <div className="d-flex flex-column gap-16">
+      {orders.map((order) => (
         <TimelineCard key={order.supplier_order_id} order={order} />
       ))}
     </div>

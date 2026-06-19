@@ -31,7 +31,7 @@ export const CashDaysLoader: React.FC<CashDaysLoaderProps> = ({ children }) => {
         const data = await response.json();
         setRecords(Array.isArray(data.days) ? data.days : []);
       } else {
-        setError(`Ошибка ${response.status}: ${response.statusText}`);
+        setError(`Ошибка ${response.status}`);
       }
     } catch (err: any) {
       setError(err.message || 'Ошибка сети');

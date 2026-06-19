@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { CategoryTree } from '../../components/atomic/CategoryTree';
 import { ProductGrid } from '../../components/atomic/ProductGrid';
+import { BrandCreateModal } from '../../components/atomic/BrandCreateModal';
 
 interface Category {
   id: number;
@@ -17,21 +18,36 @@ interface Product {
   category_id: number;
 }
 
+interface Brand {
+  id: number;
+  name: string;
+}
+
 export const Catalog: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [showBrandModal, setShowBrandModal] = useState(false);
 
-  // 🗺️ Построить цепочку родителей для выбранной категории
+  const [newProdName, setNewProdName] = useState('');
+  const [newProdCode, setNewProdCode] = useState('');
+  const [newProdPrice, setNewProdPrice] = useState('');
+  const [newProdBrandId, setNewProdBrandId] = useState('');
+  const [newProdAliases, setNewProdAliases] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
   const getCategoryPath = (catId: number | null): string => {
     if (!catId) return 'Корень каталога';
     const path: string[] = [];
     let currentId: number | null = catId;
     while (currentId) {
-      const cat = categories.find(c => c.id === currentId);
+      const cat = categories.find((c) => c.id === currentId);
       if (!cat) break;
-      path.unshift(cat.name);
+      path.unshift(cat.name.replace(/_/g, ' '));
       currentId = cat.parent_id;
     }
     return path.join(' → ');
@@ -43,8 +59,6 @@ export const Catalog: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) setCategories(data);
-        else if (data?.categories) setCategories(data.categories);
-        else if (data?.data) setCategories(data.data);
       }
     } catch (error) {
       console.error('Ошибка загрузки категорий:', error);
@@ -52,213 +66,293 @@ export const Catalog: React.FC = () => {
   };
 
   const loadProducts = async () => {
+  try {
+    const url = searchQuery
+      ? `/api/v1/catalog/search?q=${encodeURIComponent(searchQuery)}`
+      : '/api/v1/catalog/products/all';
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      setProducts(Array.isArray(data) ? data : []);
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки товаров:', error);
+  }
+};
+
+  const loadBrands = async () => {
     try {
-      const response = await fetch('/api/v1/catalog/debug-db-raw-product');
+      const response = await fetch('/api/v1/catalog/brands');
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data)) setProducts(data);
-        else if (data?.products) setProducts(data.products);
-        else if (data?.data) setProducts(data.data);
-        else setProducts([]);
+        if (Array.isArray(data)) setBrands(data);
       }
     } catch (error) {
-      console.error('Ошибка загрузки товаров:', error);
-      setProducts([]);
+      console.error('Ошибка загрузки брендов:', error);
     }
   };
 
   useEffect(() => {
     loadCategories();
-    loadProducts();
+    loadBrands();
   }, []);
 
   useEffect(() => {
-    if (!searchQuery) {
-      loadProducts();
-      return;
-    }
-    const delayDebounceFn = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/v1/catalog/search?q=${encodeURIComponent(searchQuery)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (Array.isArray(data)) setProducts(data);
-          else if (data?.products) setProducts(data.products);
-          else if (data?.data) setProducts(data.data);
-        }
-      } catch (error) {
-        console.error('Ошибка умного поиска:', error);
-      }
-    }, 300);
-    return () => clearTimeout(delayDebounceFn);
+    loadProducts();
   }, [searchQuery]);
 
-  // 🛠️ Категорийный CRUD
   const handleCreateCategory = async () => {
-    const path = getCategoryPath(selectedCategoryId);
-    const name = prompt(`📂 Место: ${path}\n\nВведите название новой категории:`);
+    const name = prompt(`Название новой категории внутри: ${getCategoryPath(selectedCategoryId)}`);
     if (!name) return;
     try {
-      const response = await fetch('/api/v1/catalog/categories', {
+      await fetch('/api/v1/catalog/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), parent_id: selectedCategoryId })
+        body: JSON.stringify({ name: name.trim(), parent_id: selectedCategoryId }),
       });
-      const data = await response.json();
-      if (response.ok) {
-        loadCategories();
-      } else {
-        alert(data.detail || 'Ошибка создания категории');
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Ошибка сети при создании категории');
+      loadCategories();
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const handleEditCategory = async (id: number) => {
-    const cat = categories.find(c => c.id === id);
-    const name = prompt('Редактировать название категории:', cat?.name);
+    const cat = categories.find((c) => c.id === id);
+    const name = prompt('Новое название категории:', cat?.name);
     if (!name) return;
     try {
-      const response = await fetch(`/api/v1/catalog/categories/${id}`, {
+      await fetch(`/api/v1/catalog/categories/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), parent_id: cat?.parent_id || null })
+        body: JSON.stringify({ name: name.trim(), parent_id: cat?.parent_id || null }),
       });
-      const data = await response.json();
-      if (response.ok) {
-        loadCategories();
-      } else {
-        alert(data.detail || 'Ошибка редактирования категории');
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Ошибка сети');
+      loadCategories();
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const handleDeleteCategory = async (id: number) => {
-    if (!confirm('Удалить эту категорию?')) return;
+    if (!confirm('Удалить категорию?')) return;
     try {
       const response = await fetch(`/api/v1/catalog/categories/${id}`, { method: 'DELETE' });
-      const data = await response.json();
       if (response.ok) {
         loadCategories();
         if (selectedCategoryId === id) setSelectedCategoryId(null);
-      } else {
-        alert(data.detail || 'Ошибка удаления категории');
       }
-    } catch (error) {
-      console.error(error);
-      alert('Ошибка сети');
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  // 🛠️ Товарный CRUD
-  const handleCreateProduct = async () => {
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setFormSuccess(null);
+
     if (!selectedCategoryId) {
-      alert('Сначала выберите категорию в дереве слева!');
+      setFormError('Выберите категорию в дереве слева');
       return;
     }
-    const name = prompt('Название товара:');
-    const code = prompt('Артикул товара:');
-    const priceStr = prompt('Розничная цена:');
-    if (!name || !code || !priceStr) return;
+    if (!newProdName || !newProdCode || !newProdBrandId) {
+      setFormError('Название, Артикул и Бренд обязательны');
+      return;
+    }
 
     try {
       const response = await fetch('/api/v1/catalog/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name.trim(),
-          code: code.trim(),
-          recommended_retail_price: parseFloat(priceStr),
-          category_id: selectedCategoryId
-        })
+          name: newProdName.trim(),
+          code: newProdCode.trim(),
+          recommended_retail_price: newProdPrice ? parseFloat(newProdPrice) : 0.0,
+          brand_id: parseInt(newProdBrandId),
+          category_id: selectedCategoryId,
+          search_aliases: newProdAliases
+            ? newProdAliases.split(',').map((s) => s.trim()).filter(Boolean)
+            : [],
+        }),
       });
+
       const data = await response.json();
+
       if (response.ok) {
+        setFormSuccess('Товар создан');
+        setNewProdName('');
+        setNewProdCode('');
+        setNewProdPrice('');
+        setNewProdBrandId('');
+        setNewProdAliases('');
         loadProducts();
+        setTimeout(() => {
+          setFormSuccess(null);
+          setShowForm(false);
+        }, 800);
       } else {
-        alert(data.detail || 'Ошибка создания товара');
+        setFormError(data.detail || 'Ошибка');
       }
     } catch (error) {
-      console.error(error);
-      alert('Ошибка сети');
+      setFormError('Ошибка сети');
     }
   };
 
   const handleEditProduct = async (id: number) => {
-    const prod = products.find(p => p.id === id);
+    const prod = products.find((p) => p.id === id);
     if (!prod) return;
-    const name = prompt('Изменить название:', prod.name);
-    const priceStr = prompt('Изменить цену:', prod.recommended_retail_price.toString());
-    if (!name || !priceStr) return;
-
+    const name = prompt('Новое название:', prod.name);
+    const price = prompt('Новая цена:', prod.recommended_retail_price?.toString());
+    if (!name || !price) return;
     try {
-      const response = await fetch(`/api/v1/catalog/products/${id}`, {
+      await fetch(`/api/v1/catalog/products/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          recommended_retail_price: parseFloat(priceStr),
-          category_id: prod.category_id
-        })
+        body: JSON.stringify({ name: name.trim(), recommended_retail_price: parseFloat(price), category_id: prod.category_id }),
       });
-      const data = await response.json();
-      if (response.ok) {
-        loadProducts();
-      } else {
-        alert(data.detail || 'Ошибка редактирования товара');
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Ошибка сети');
+      loadProducts();
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const handleDeleteProduct = async (id: number) => {
-    if (!confirm('Удалить эту товарную карточку?')) return;
+    if (!confirm('Удалить товар?')) return;
     try {
       await fetch(`/api/v1/catalog/products/${id}`, { method: 'DELETE' });
       loadProducts();
-    } catch (error) {
-      console.error(error);
-      alert('Ошибка сети');
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const filteredProducts = Array.isArray(products)
-    ? products.filter(prod => searchQuery ? true : (selectedCategoryId ? prod.category_id === selectedCategoryId : true))
-    : [];
+  const filteredProducts = products.filter((prod) =>
+    selectedCategoryId ? prod.category_id === selectedCategoryId : true
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)' }}>
-      <div style={{ background: '#1a1a1a', padding: '10px 20px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <input
-          type="text"
-          placeholder="🔍 Умный поиск товаров по названию или артикулу..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            flex: 1,
-            maxWidth: '500px',
-            padding: '8px 12px',
-            borderRadius: '4px',
-            border: '1px solid #444',
-            background: '#2d2d2d',
-            color: '#fff',
-            outline: 'none'
-          }}
-        />
-        {/* 🗺️ Показывает текущий путь */}
-        <span style={{ color: '#888', fontSize: '13px' }}>
-          📂 {getCategoryPath(selectedCategoryId)}
-        </span>
+    <div className="page-content">
+      {/* Верхняя панель */}
+      <div className="card mb-3">
+        <div className="d-flex justify-between align-center">
+          <input
+            type="text"
+            placeholder="Поиск по названию или артикулу..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="form-control"
+            style={{ maxWidth: '400px' }}
+          />
+          <div className="d-flex align-center gap-12">
+            <span className="text-muted" style={{ fontWeight: 500 }}>
+              📂 {getCategoryPath(selectedCategoryId)}
+            </span>
+            <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
+              {showForm ? 'Скрыть' : '+ Добавить товар'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      {/* Сворачиваемая форма */}
+      {showForm && (
+        <div className="card mb-3">
+          <form onSubmit={handleCreateProduct}>
+            <div className="form-row mb-2">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Название *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Ключ рожковый 10мм"
+                  value={newProdName}
+                  onChange={(e) => setNewProdName(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Артикул *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="KEY-10-01"
+                  value={newProdCode}
+                  onChange={(e) => setNewProdCode(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Цена</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  placeholder="0.00"
+                  step="0.01"
+                  value={newProdPrice}
+                  onChange={(e) => setNewProdPrice(e.target.value)}
+                  style={{ width: '110px' }}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Бренд *</label>
+                <div className="d-flex gap-8">
+                  <select
+                    className="form-control"
+                    value={newProdBrandId}
+                    onChange={(e) => setNewProdBrandId(e.target.value)}
+                    style={{ width: '160px' }}
+                  >
+                    <option value="">-- Бренд --</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => setShowBrandModal(true)}
+                    title="Добавить новый бренд"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Синонимы</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="десятка, ключ 10"
+                  value={newProdAliases}
+                  onChange={(e) => setNewProdAliases(e.target.value)}
+                  style={{ width: '180px' }}
+                />
+              </div>
+            </div>
+
+            {formError && <div className="alert alert-danger" style={{ marginBottom: '8px', padding: '8px 12px' }}>{formError}</div>}
+            {formSuccess && <div className="alert alert-success" style={{ marginBottom: '8px', padding: '8px 12px' }}>{formSuccess}</div>}
+
+            <div className="d-flex gap-8">
+              <button type="submit" className="btn btn-success btn-sm">Сохранить</button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => { setShowForm(false); setFormError(null); }}>
+                Отмена
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Модальное окно: Новый бренд */}
+      {showBrandModal && (
+        <BrandCreateModal
+          onClose={() => setShowBrandModal(false)}
+          onBrandCreated={(brandId) => {
+            loadBrands();
+            setNewProdBrandId(String(brandId));
+          }}
+        />
+      )}
+
+      {/* Дерево + Сетка */}
+      <div className="d-flex gap-16" style={{ alignItems: 'flex-start' }}>
         <CategoryTree
           categories={categories}
           selectedCategoryId={selectedCategoryId}
@@ -267,10 +361,9 @@ export const Catalog: React.FC = () => {
           onEditCategory={handleEditCategory}
           onDeleteCategory={handleDeleteCategory}
         />
-        
         <ProductGrid
           products={filteredProducts}
-          onCreateProduct={handleCreateProduct}
+          onCreateProduct={() => setShowForm(true)}
           onEditProduct={handleEditProduct}
           onDeleteProduct={handleDeleteProduct}
         />

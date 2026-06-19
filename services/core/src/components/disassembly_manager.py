@@ -89,8 +89,8 @@ class DisassemblyManager:
         if parent_unit.physical_status != PhysicalStatus.IN_STORE:
             raise HTTPException(status_code=400, detail=f"Набор имеет статус {parent_unit.physical_status}. Вскрыть можно только полный набор.")
 
-        # Блокируем некомплект в СУБД (переводим в LOST по бизнес-логике)
-        parent_unit.physical_status = PhysicalStatus.LOST
+        # Блокируем некомплект в СУБД (переводим в FROZEN_INCOMPLETE по бизнес-логике тут была огшибка)
+        parent_unit.physical_status = PhysicalStatus.FROZEN_INCOMPLETE
         
         sold_satellite_sn = f"SN-DERBAN-{uuid.uuid4().hex[:8].upper()}"
         sold_unit = ProductUnit(
@@ -108,7 +108,7 @@ class DisassemblyManager:
 
         await send_disassembly_log(
             "0103", "WARNING", 
-            f"ВНИМАНИЕ: Произведен частичный некомплектный разбор набора {parent_unit.unique_serial_number}. Извлечена деталь {sold_satellite_sn}. Набор заблокирован в статусе LOST."
+            f"ВНИМАНИЕ: Произведен частичный некомплектный разбор набора {parent_unit.unique_serial_number}. Извлечена деталь {sold_satellite_sn}. Набор заблокирован в статусе FROZEN_INCOMPLETE."
         )
         return {
             "status": "success",

@@ -16,65 +16,50 @@ export const RuleCreatorBlock: React.FC<RuleCreatorBlockProps> = ({ onRuleCreate
     if (!price || !threshold) return;
 
     try {
-      const response = await fetch('/api/v1/warehouse/purchase-rules', {
+      await fetch('/api/v1/warehouse/purchase-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           price_operator: operator,
           price_value: parseFloat(price),
           name_contains: keyword.trim() || null,
-          stock_threshold: parseInt(threshold)
-        })
+          stock_threshold: parseInt(threshold),
+        }),
       });
-
-      if (response.ok) {
-        alert('🎉 Аналитическое правило успешно внесено в матрицу автозаказа!');
-        setPrice('');
-        setKeyword('');
-        setThreshold('');
-        onRuleCreated(); // Оповещаем родительскую страницу о необходимости обновить списки
-      }
-    } catch (err) {
-      console.error('Сетевой сбой при сохранении правила:', err);
+      alert('Правило создано');
+      setPrice('');
+      setKeyword('');
+      setThreshold('');
+      onRuleCreated();
+    } catch (e) {
+      console.error(e);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ 
-      background: '#1a1a1a', padding: '20px', borderRadius: '6px', 
-      border: '1px solid #333', marginBottom: '25px'
-    }}>
-      <h3 style={{ margin: '0 0 15px 0', color: '#4fa8ff', fontSize: '15px' }}>
-        ⚙️ Собрать новое правило снабжения (Конструктор тегов)
-      </h3>
-      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Если розничная цена:</label>
-          <select value={operator} onChange={(e) => setOperator(e.target.value)} style={{ padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px', outline: 'none' }}>
-            <option value=">">&gt; (Больше)</option>
-            <option value="<">&lt; (Меньше)</option>
+    <form onSubmit={handleSubmit} className="card mb-3">
+      <h3 className="card-title">Конструктор правил</h3>
+      <div className="form-inline">
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">Цена</label>
+          <select className="form-control" value={operator} onChange={(e) => setOperator(e.target.value)} style={{ width: '80px' }}>
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
           </select>
         </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Порог стоимости (₽):</label>
-          <input type="number" required value={price} onChange={(e) => setPrice(e.target.value)} placeholder="80" style={{ width: '90px', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px', outline: 'none' }} />
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">Порог (₽)</label>
+          <input type="number" className="form-control" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: '100px' }} />
         </div>
-
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>В названии содержится слово (Тег):</label>
-          <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="например: бита" style={{ width: '100%', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px', outline: 'none' }} />
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">Ключевое слово</label>
+          <input type="text" className="form-control" value={keyword} onChange={(e) => setKeyword(e.target.value)} style={{ width: '140px' }} />
         </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Остаток &lt; :</label>
-          <input type="number" required value={threshold} onChange={(e) => setThreshold(e.target.value)} placeholder="3" style={{ width: '70px', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px', outline: 'none' }} />
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">Остаток &lt;</label>
+          <input type="number" className="form-control" value={threshold} onChange={(e) => setThreshold(e.target.value)} style={{ width: '80px' }} />
         </div>
-
-        <button type="submit" style={{ background: '#2ea44f', color: '#fff', border: 'none', padding: '9px 20px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}>
-          + Внедрить в СУБД
-        </button>
+        <button type="submit" className="btn btn-success btn-sm">Создать</button>
       </div>
     </form>
   );

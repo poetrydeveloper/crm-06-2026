@@ -19,7 +19,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  // Простейший асинхронный роутер для прохождения BDD-тестов без внешних либ
   const renderPage = () => {
     if (currentPath === '/' || currentPath === '') {
       return <Cashbox />;
@@ -30,7 +29,6 @@ export default function App() {
     if (currentPath.startsWith('/admin/cash-days')) {
       return <CashDays />;
     }
-    // 🔥 СТРОГИЙ РОУТ ДЛЯ ТАЙМЛАЙНА ЛОГИСТИКИ
     if (currentPath === '/admin/orders') {
       return <OrdersTimeline />;
     }
@@ -40,23 +38,23 @@ export default function App() {
     if (currentPath === '/admin/returns') {
       return <Returns />;
     }
-    if (currentPath === '/admin/returns') {
-      return <Returns />;
-    }
-    // 🔥 НОВЫЙ SPA-РОУТ ДЛЯ ЖУРНАЛА ДИРЕКТОРА
     if (currentPath === '/admin/returns-log') {
       return <ReturnsLog />;
     }
     if (currentPath.startsWith('/warehouse')) {
       return <Receipts />;
     }
-    return <div style={{ padding: '20px' }}>🚨 404 — Страница не найдена</div>;
+    return (
+      <div className="page-content">
+        <div className="alert alert-warning">🚨 404 — Страница не найдена</div>
+      </div>
+    );
   };
 
   return (
-    <div style={{ background: '#121212', color: '#fff', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+    <>
       <Header />
-      <main>{renderPage()}</main>
-    </div>
+      <main className="container">{renderPage()}</main>
+    </>
   );
 }

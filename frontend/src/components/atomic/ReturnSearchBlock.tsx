@@ -12,59 +12,26 @@ export const ReturnSearchBlock: React.FC<ReturnSearchBlockProps> = ({
   serialNumber,
   onSerialChange,
   onCheckRelation,
-  isLoading
+  isLoading,
 }) => {
   return (
-    <form onSubmit={onCheckRelation} style={{ 
-      background: '#1a1a1a', 
-      padding: '20px', 
-      borderRadius: '6px', 
-      border: '1px solid #333',
-      marginBottom: '20px',
-      display: 'flex',
-      gap: '15px',
-      alignItems: 'flex-end'
-    }}>
-      <div style={{ flex: 1 }}>
-        <label style={{ display: 'block', fontSize: '13px', color: '#aaa', marginBottom: '8px', fontWeight: 'bold' }}>
-          🔌 Сканирование или ввод серийного номера (SN):
-        </label>
-        <input
-          type="text"
-          required
-          value={serialNumber}
-          onChange={(e) => onSerialChange(e.target.value)}
-          placeholder="например, SN-DERBAN-A1B2C3"
-          style={{ 
-            width: '100%', 
-            padding: '10px', 
-            background: '#2d2d2d', 
-            color: '#fff', 
-            border: '1px solid #444', 
-            borderRadius: '4px',
-            fontSize: '15px',
-            outline: 'none'
-          }}
-        />
+    <form onSubmit={onCheckRelation} className="card mb-3">
+      <div className="d-flex gap-12 align-center">
+        <div style={{ flex: 1 }}>
+          <label className="form-label">Серийный номер (SN)</label>
+          <input
+            type="text"
+            className="form-control"
+            required
+            value={serialNumber}
+            onChange={(e) => onSerialChange(e.target.value)}
+            placeholder="SN-DERBAN-A1B2C3"
+          />
+        </div>
+        <button type="submit" className="btn btn-primary" disabled={isLoading} style={{ alignSelf: 'flex-end' }}>
+          {isLoading ? 'Проверка...' : 'Проверить'}
+        </button>
       </div>
-      
-      <button
-        type="submit"
-        disabled={isLoading}
-        style={{ 
-          background: '#4fa8ff', 
-          color: '#000', 
-          border: 'none', 
-          padding: '11px 24px', 
-          borderRadius: '4px', 
-          cursor: isLoading ? 'not-allowed' : 'pointer', 
-          fontWeight: 'bold',
-          fontSize: '14px',
-          transition: 'background 0.2s'
-        }}
-      >
-        {isLoading ? 'Проверка...' : '🔍 Проверить связи юнита'}
-      </button>
     </form>
   );
 };

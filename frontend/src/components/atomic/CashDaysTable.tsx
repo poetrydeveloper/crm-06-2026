@@ -14,43 +14,32 @@ interface CashDaysTableProps {
 
 export const CashDaysTable: React.FC<CashDaysTableProps> = ({ records }) => {
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', background: '#1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
+    <div className="table-wrapper">
+      <table className="table">
         <thead>
-          <tr style={{ background: '#222', borderBottom: '2px solid #333', textAlign: 'left' }}>
-            <th style={{ padding: '12px' }}>ID Смены</th>
-            <th style={{ padding: '12px' }}>Дата Открытия</th>
-            <th style={{ padding: '12px' }}>Текущий Статус</th>
-            <th style={{ padding: '12px', textAlign: 'right' }}>Выручка (Финансовый Итог)</th>
+          <tr>
+            <th>ID смены</th>
+            <th>Дата открытия</th>
+            <th>Статус</th>
+            <th style={{ textAlign: 'right' }}>Выручка</th>
           </tr>
         </thead>
         <tbody>
           {records.length === 0 ? (
             <tr>
-              <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
-                📭 История кассовых смен пуста.
-              </td>
+              <td colSpan={4} className="empty-row">История кассовых смен пуста</td>
             </tr>
           ) : (
-            records.map(record => (
-              <tr key={record.id} style={{ borderBottom: '1px solid #333' }}>
-                <td style={{ padding: '12px', fontWeight: 'bold' }}>#{record.id}</td>
-                <td style={{ padding: '12px', color: '#aaa' }}>
-                  {new Date(record.created_at).toLocaleDateString('ru-RU')}
-                </td>
-                <td style={{ padding: '12px' }}>
-                  <span style={{ 
-                    background: record.status === 'ОТКРЫТА' ? '#1b5e20' : '#2d2d2d', 
-                    padding: '4px 10px', 
-                    borderRadius: '4px', 
-                    fontSize: '12px', 
-                    fontWeight: 'bold',
-                    color: record.status === 'ОТКРЫТА' ? '#a5d6a7' : '#aaa' 
-                  }}>
-                    ● {record.status}
+            records.map((record) => (
+              <tr key={record.id}>
+                <td style={{ fontWeight: 600 }}>#{record.id}</td>
+                <td className="text-muted">{new Date(record.created_at).toLocaleDateString('ru-RU')}</td>
+                <td>
+                  <span className={`badge ${record.status === 'ОТКРЫТА' ? 'badge-success' : 'badge-secondary'}`}>
+                    {record.status}
                   </span>
                 </td>
-                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#2ea44f' }}>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--success)' }}>
                   {record.total_sales.toFixed(2)} ₽
                 </td>
               </tr>

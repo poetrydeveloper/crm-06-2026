@@ -62,4 +62,4 @@ async def health_check():
 
 app.include_router(catalog_router, prefix="/api/v1")
 app.include_router(warehouse_router, prefix="/api/v1")
-app.include_router(cash_router, prefix="/v1")
+app.include_router(cash_router, prefix="/api/v1")

@@ -16,7 +16,6 @@ interface CategoryTreeProps {
   onDeleteCategory: (id: number) => void;
 }
 
-// 🔄 Рекурсивный компонент для отрисовки категории и её потомков
 const CategoryNode: React.FC<{
   category: Category;
   allCategories: Category[];
@@ -26,53 +25,61 @@ const CategoryNode: React.FC<{
   onEditCategory: (id: number) => void;
   onDeleteCategory: (id: number) => void;
 }> = ({ category, allCategories, selectedCategoryId, depth, onSelectCategory, onEditCategory, onDeleteCategory }) => {
-  const MAX_DEPTH = 20;
-  const children = allCategories.filter(c => c.parent_id === category.id);
+  const validCategories = Array.isArray(allCategories) ? allCategories : [];
+  const children = validCategories.filter((c) => c.parent_id === category.id);
   const isSelected = selectedCategoryId === category.id;
-  const indent = depth * 15;
+  const indent = depth * 16;
 
   return (
-    <li style={{ marginBottom: '4px' }}>
+    <li style={{ marginBottom: '2px' }}>
       <div
+        className={`d-flex justify-between align-center ${isSelected ? 'category-selected' : ''}`}
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '5px 6px',
-          borderRadius: '4px',
-          background: isSelected ? '#2d2d2d' : 'transparent',
+          padding: '6px 10px',
+          borderRadius: 'var(--radius-sm)',
           cursor: 'pointer',
-          marginLeft: `${indent}px`
+          marginLeft: `${indent}px`,
+          background: isSelected ? 'var(--primary)' : 'transparent',
+          color: isSelected ? '#fff' : 'var(--text)',
+          transition: 'all 0.1s ease',
         }}
         onClick={() => onSelectCategory(category.id)}
       >
-        <span style={{ fontSize: depth > 0 ? '14px' : '15px', color: isSelected ? '#4fa8ff' : depth > 0 ? '#ccc' : '#fff' }}>
-          {depth > 0 ? '↳ ' : ''}{category.name}
+        <span style={{ fontSize: depth > 0 ? '13px' : '14px', fontWeight: depth === 0 ? 600 : 400 }}>
+          {depth > 0 ? '↳ ' : ''}
+          {category.name.replace(/_/g, ' ')}
         </span>
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div className="d-flex gap-8">
           <button
-            onClick={(e) => { e.stopPropagation(); onEditCategory(category.id); }}
-            style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '12px' }}
+            className="btn btn-sm btn-outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditCategory(category.id);
+            }}
+            style={{ padding: '2px 6px', fontSize: '12px', border: 'none' }}
           >
             ✏️
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onDeleteCategory(category.id); }}
-            style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '12px' }}
+            className="btn btn-sm btn-outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteCategory(category.id);
+            }}
+            style={{ padding: '2px 6px', fontSize: '12px', border: 'none', color: 'var(--danger)' }}
           >
             🗑️
           </button>
         </div>
       </div>
 
-      {/* Рекурсивно рендерим детей, если не превышен лимит глубины */}
-      {depth < MAX_DEPTH && children.length > 0 && (
-        <ul style={{ listStyleType: 'none', paddingLeft: 0, margin: 0 }}>
-          {children.map(child => (
+      {children.length > 0 && (
+        <ul style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+          {children.map((child) => (
             <CategoryNode
               key={child.id}
               category={child}
-              allCategories={allCategories}
+              allCategories={validCategories}
               selectedCategoryId={selectedCategoryId}
               depth={depth + 1}
               onSelectCategory={onSelectCategory}
@@ -94,25 +101,25 @@ export const CategoryTree: React.FC<CategoryTreeProps> = ({
   onEditCategory,
   onDeleteCategory,
 }) => {
-  const rootCategories = categories.filter(cat => !cat.parent_id);
+  const validCategories = Array.isArray(categories) ? categories : [];
+  const rootCategories = validCategories.filter((cat) => !cat.parent_id);
 
   return (
-    <div style={{ width: '280px', background: '#1a1a1a', padding: '15px', borderRight: '1px solid #333', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ margin: 0, color: '#4fa8ff' }}>📁 Категории</h3>
-        <button
-          onClick={onCreateCategory}
-          style={{ background: '#2ea44f', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}
-        >
+    <div className="card" style={{ width: '280px', maxHeight: 'calc(100vh - 160px)', overflowY: 'auto', flexShrink: 0 }}>
+      <div className="d-flex justify-between align-center mb-3">
+        <h3 className="card-title" style={{ margin: 0, fontSize: '15px' }}>
+          Категории
+        </h3>
+        <button className="btn btn-success btn-sm" onClick={onCreateCategory}>
           + Добавить
         </button>
       </div>
-      <ul style={{ listStyleType: 'none', paddingLeft: 0, margin: 0 }}>
-        {rootCategories.map(cat => (
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {rootCategories.map((cat) => (
           <CategoryNode
             key={cat.id}
             category={cat}
-            allCategories={categories}
+            allCategories={validCategories}
             selectedCategoryId={selectedCategoryId}
             depth={0}
             onSelectCategory={onSelectCategory}
@@ -120,6 +127,11 @@ export const CategoryTree: React.FC<CategoryTreeProps> = ({
             onDeleteCategory={onDeleteCategory}
           />
         ))}
+        {rootCategories.length === 0 && (
+          <li className="text-muted text-center" style={{ padding: '20px 0' }}>
+            Нет категорий
+          </li>
+        )}
       </ul>
     </div>
   );

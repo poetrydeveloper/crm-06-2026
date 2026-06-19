@@ -131,7 +131,7 @@ export const DisassemblyModal: React.FC<DisassemblyModalProps> = ({ unitSerial, 
 
             <div>
               <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '5px' }}>Цена детали (₽):</label>
-              <input type="number" required value={quickItemPrice} onChange={(e) => setPrice(e.target.value)} placeholder="350" style={{ width: '100%', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px' }} />
+              <input type="number" required value={quickItemPrice} onChange={(e) => setQuickItemPrice(e.target.value)} placeholder="350" style={{ width: '100%', padding: '8px', background: '#2d2d2d', color: '#fff', border: '1px solid #444', borderRadius: '4px' }} />
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>

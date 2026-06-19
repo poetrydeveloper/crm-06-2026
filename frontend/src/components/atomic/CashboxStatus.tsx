@@ -6,23 +6,13 @@ interface CashboxStatusProps {
 }
 
 export const CashboxStatus: React.FC<CashboxStatusProps> = ({ status }) => {
+  const isOpen = status === 'ОТКРЫТА';
+
   return (
-    <div style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      gap: '12px', 
-      background: '#222', 
-      padding: '6px 15px', 
-      borderRadius: '6px', 
-      border: '1px solid #333' 
-    }}>
-      <span style={{ fontSize: '14px', color: '#aaa' }}>Кассовая смена:</span>
-      <span style={{ 
-        fontWeight: 'bold', 
-        fontSize: '14px', 
-        color: status === 'ОТКРЫТА' ? '#2ea44f' : '#ff4d4d' 
-      }}>
-        ● {status}
+    <div className="d-flex align-center gap-8">
+      <span className="text-muted" style={{ fontSize: '13px' }}>Смена:</span>
+      <span className={`badge ${isOpen ? 'badge-success' : 'badge-danger'}`}>
+        {status}
       </span>
     </div>
   );

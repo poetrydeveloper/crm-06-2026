@@ -8,34 +8,18 @@ interface WarehouseTabsProps {
 
 export const WarehouseTabs: React.FC<WarehouseTabsProps> = ({ activeTab, onTabChange }) => {
   return (
-    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+    <div className="d-flex gap-8">
       <button
+        className={`btn btn-sm ${activeTab === 'receipts' ? 'btn-primary' : 'btn-outline'}`}
         onClick={() => onTabChange('receipts')}
-        style={{
-          padding: '8px 16px',
-          borderRadius: '4px',
-          border: 'none',
-          background: activeTab === 'receipts' ? '#4fa8ff' : '#2d2d2d',
-          color: activeTab === 'receipts' ? '#000' : '#fff',
-          fontWeight: 'bold',
-          cursor: 'pointer'
-        }}
       >
-        📋 Активные поставки
+        Активные поставки
       </button>
       <button
+        className={`btn btn-sm ${activeTab === 'suppliers' ? 'btn-primary' : 'btn-outline'}`}
         onClick={() => onTabChange('suppliers')}
-        style={{
-          padding: '8px 16px',
-          borderRadius: '4px',
-          border: 'none',
-          background: activeTab === 'suppliers' ? '#4fa8ff' : '#2d2d2d',
-          color: activeTab === 'suppliers' ? '#000' : '#fff',
-          fontWeight: 'bold',
-          cursor: 'pointer'
-        }}
       >
-        🏢 Справочник поставщиков
+        Поставщики
       </button>
     </div>
   );

@@ -6,64 +6,49 @@ interface OrderQuickManualAddProps {
 }
 
 export const OrderQuickManualAdd: React.FC<OrderQuickManualAddProps> = ({ onAddItem }) => {
-  const [manualProductId, setManualProductId] = useState('');
-  const [manualQuantity, setManualQuantity] = useState('1');
-  const [manualPrice, setManualPrice] = useState('100');
+  const [productId, setProductId] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [price, setPrice] = useState('100');
 
   const handleAdd = () => {
-    if (!manualProductId || !manualQuantity || !manualPrice) return;
-    
-    onAddItem(
-      parseInt(manualProductId),
-      parseInt(manualQuantity) || 1,
-      parseFloat(manualPrice) || 0
-    );
-    
-    setManualProductId('');
-    setManualQuantity('1');
+    if (!productId || !quantity || !price) return;
+    onAddItem(parseInt(productId), parseInt(quantity) || 1, parseFloat(price) || 0);
+    setProductId('');
+    setQuantity('1');
   };
 
   return (
-    <div style={{ background: '#252525', padding: '10px', borderRadius: '4px', border: '1px solid #333', marginTop: '4px' }}>
-      <span style={{ fontSize: '10px', color: '#888', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>
-        ⚡ БЫСТРОЕ ДОБАВЛЕНИЕ ПОЗИЦИИ ВРУЧНУЮ:
-      </span>
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-        <div style={{ flex: 1 }}>
-          <input 
-            type="number" 
-            value={manualProductId} 
-            onChange={(e) => setManualProductId(e.target.value)} 
-            placeholder="ID товара" 
-            style={{ width: '100%', padding: '6px', background: '#1a1a1a', color: '#fff', border: '1px solid #444', borderRadius: '3px', fontSize: '12px', outline: 'none' }} 
-          />
-        </div>
-        <div style={{ width: '60px' }}>
-          <input 
-            type="number" 
-            min="1" 
-            value={manualQuantity} 
-            onChange={(e) => setManualQuantity(e.target.value)} 
-            placeholder="Кол-во" 
-            style={{ width: '100%', padding: '6px', background: '#1a1a1a', color: '#fff', border: '1px solid #444', borderRadius: '3px', fontSize: '12px', textAlign: 'center', outline: 'none' }} 
-          />
-        </div>
-        <div style={{ width: '75px' }}>
-          <input 
-            type="number" 
-            min="0" 
-            value={manualPrice} 
-            onChange={(e) => setManualPrice(e.target.value)} 
-            placeholder="Цена" 
-            style={{ width: '100%', padding: '6px', background: '#1a1a1a', color: '#fff', border: '1px solid #444', borderRadius: '3px', fontSize: '12px', textAlign: 'right', outline: 'none' }} 
-          />
-        </div>
-        <button 
-          type="button" 
-          onClick={handleAdd} 
-          style={{ background: '#333', color: '#4fa8ff', border: '1px solid #444', padding: '6px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
-        >
-          + Добавить
+    <div style={{ background: 'var(--bg-secondary)', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+      <div className="text-muted" style={{ fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Быстрое добавление:</div>
+      <div className="d-flex gap-8">
+        <input
+          type="number"
+          className="form-control"
+          value={productId}
+          onChange={(e) => setProductId(e.target.value)}
+          placeholder="ID товара"
+          style={{ flex: 1 }}
+        />
+        <input
+          type="number"
+          min="1"
+          className="form-control"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          placeholder="Кол-во"
+          style={{ width: '70px' }}
+        />
+        <input
+          type="number"
+          min="0"
+          className="form-control"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="Цена"
+          style={{ width: '80px' }}
+        />
+        <button type="button" className="btn btn-primary btn-sm" onClick={handleAdd}>
+          +
         </button>
       </div>
     </div>

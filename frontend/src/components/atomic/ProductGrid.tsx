@@ -11,28 +11,26 @@ interface Product {
 
 interface ProductGridProps {
   products: Product[];
-  onCreateProduct: () => void;
+  onCreateProduct: () => void; // Сохранено для обратной совместимости пропсов
   onEditProduct: (id: number) => void;
   onDeleteProduct: (id: number) => void;
 }
 
 export const ProductGrid: React.FC<ProductGridProps> = ({
   products,
-  onCreateProduct,
   onEditProduct,
   onDeleteProduct,
 }) => {
   return (
-    <div style={{ flex: 1, padding: '20px', background: '#121212' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h3 style={{ margin: 0, color: '#fff' }}>📦 Номенклатурные карточки</h3>
-        <button onClick={onCreateProduct} style={{ background: '#2ea44f', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
-          + Создать товар
-        </button>
+    <div style={{ flex: 1, padding: '20px', background: '#121212', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+        <h3 style={{ margin: 0, color: '#fff', fontSize: '16px' }}>📦 Номенклатурные карточки товаров</h3>
       </div>
 
       {products.length === 0 ? (
-        <div style={{ color: '#666', textAlign: 'center', padding: '4px' }}>В выбранной категории пока нет товаров.</div>
+        <div style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>
+          В выбранной категории пока нет товаров или ничего не найдено умным поиском.
+        </div>
       ) : (
         <div style={{
           display: 'grid',

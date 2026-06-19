@@ -8,11 +8,20 @@ from src.schemas.catalog import CategoryCreate
 
 router = APIRouter(prefix="/categories", tags=["Каталог: Категории"])
 
+def slugify_name(name: str) -> str:
+    """Трансформация: 'Рожковые Ключи' -> 'рожковые_ключи'"""
+    return name.strip().lower().replace(" ", "_")
+
+def unslugify_name(slug: str) -> str:
+    """🔥 ИСПРАВЛЕНО: Возвращаем все буквы строго в малом регистре ('рожковые ключи')"""
+    return slug.replace("_", " ").lower()
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
-    # Проверяем дубликат по ЧЕЛОВЕЧЕСКОМУ имени
+    system_name = slugify_name(payload.name)
+    
     existing = await db.execute(
-        select(Category).where(Category.name == payload.name.strip())
+        select(Category).where(Category.name == system_name)
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Категория с таким названием уже существует")
@@ -22,16 +31,19 @@ async def create_category(payload: CategoryCreate, db: AsyncSession = Depends(ge
         if not parent:
             raise HTTPException(status_code=404, detail="Родительская категория не найдена")
     
-    # Сохраняем человеческое имя
-    new_category = Category(name=payload.name.strip(), parent_id=payload.parent_id)
+    new_category = Category(name=system_name, parent_id=payload.parent_id)
     db.add(new_category)
     await db.commit()
-    return {"status": "success", "category_id": new_category.id, "name": new_category.name}
+    return {"status": "success", "category_id": new_category.id, "name": unslugify_name(new_category.name)}
 
 @router.get("", response_model=list[dict])
 async def get_categories(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Category))
-    return [{"id": c.id, "name": c.name, "parent_id": c.parent_id} for c in result.scalars().all()]
+    # Для клиента на фронтенде возвращаем все на место (заменяем '_' на пробел) в малом регистре
+    return [
+        {"id": c.id, "name": unslugify_name(c.name), "parent_id": c.parent_id} 
+        for c in result.scalars().all()
+    ]
 
 @router.put("/{category_id}")
 async def update_category(category_id: int, payload: CategoryCreate, db: AsyncSession = Depends(get_db)):
@@ -39,7 +51,7 @@ async def update_category(category_id: int, payload: CategoryCreate, db: AsyncSe
     if not category:
         raise HTTPException(status_code=404, detail="Категория не найдена")
     
-    category.name = payload.name.strip()
+    category.name = slugify_name(payload.name)
     if payload.parent_id:
         category.parent_id = payload.parent_id
     await db.commit()

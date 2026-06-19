@@ -1,9 +1,9 @@
 # services/core/src/routers/catalog_nodes/products.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from src.database import get_db
-from src.models import Product, Brand, Category, ProductUnit
+from src.models import Product, Brand, Category, ProductUnit, PhysicalStatus
 from src.schemas.catalog import ProductCreate
 
 router = APIRouter(prefix="/products", tags=["Каталог: Товары"])
@@ -12,6 +12,26 @@ def transform_to_snake_case(text: str) -> str:
     if not text:
         return ""
     return "_".join(text.lower().strip().split())
+
+@router.get("/all", status_code=200)
+async def get_all_products(db: AsyncSession = Depends(get_db)):
+    """Возвращает все товары с category_id и доступным количеством на складе"""
+    result = await db.execute(select(Product).order_by(Product.id))
+    products = result.scalars().all()
+    
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "code": p.code,
+            "recommended_retail_price": float(p.recommended_retail_price) if p.recommended_retail_price else 0.0,
+            "category_id": p.category_id,
+            "search_tags": p.search_tags if isinstance(p.search_tags, list) else [],
+            "search_aliases": p.search_aliases if isinstance(p.search_aliases, list) else [],
+            "images": p.images if isinstance(p.images, list) else [],
+        }
+        for p in products
+    ]
 
 @router.get("/anomalies")
 async def get_product_anomalies(db: AsyncSession = Depends(get_db)):
@@ -46,6 +66,11 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
     tags.append(target_code)
     tags.append(brand.name)
 
+    final_images = payload.images if (payload.images and len(payload.images) > 0) else ["/assets/hero.png"]
+
+    raw_aliases = payload.search_aliases if payload.search_aliases is not None else []
+    final_aliases = [a.lower().strip() for a in raw_aliases if a]
+
     new_product = Product(
         category_id=payload.category_id,
         brand_id=payload.brand_id,
@@ -53,14 +78,13 @@ async def create_product(payload: ProductCreate, db: AsyncSession = Depends(get_
         name=transform_to_snake_case(payload.name),
         description=payload.description,
         recommended_retail_price=payload.recommended_retail_price,
-        # 🔥 ИСПРАВЛЕНО: Безопасный фолбэк на пустой список, если изображения не переданы или равны None
-        images=payload.images if (payload.images is not None) else [],
+        images=final_images,
         search_tags=tags,
-        search_aliases=[a.lower().strip() for a in payload.search_aliases]
+        search_aliases=final_aliases
     )
     db.add(new_product)
     await db.commit()
-    return {"status": "success", "product_id": new_product.id, "generated_tags": tags}
+    return {"status": "success", "product_id": new_product.id, "generated_tags": tags, "images": final_images}
 
 @router.get("/{product_id}", status_code=200)
 async def get_product_by_id_api(product_id: int, db: AsyncSession = Depends(get_db)):
@@ -90,7 +114,7 @@ async def update_product(product_id: int, payload: ProductCreate, db: AsyncSessi
     product.name = transform_to_snake_case(payload.name)
     product.description = payload.description
     product.recommended_retail_price = payload.recommended_retail_price
-    product.images = payload.images if (payload.images is not None) else []
+    product.images = payload.images if (payload.images and len(payload.images) > 0) else ["/assets/hero.png"]
     await db.commit()
     return {"status": "success", "message": "Карточка товара успешно изменена"}
 

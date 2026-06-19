@@ -1,3 +1,7 @@
+# docker compose up -d      легкий запуск без хромиума
+# docker compose --profile full up -d     полный
+version: '3.8'
+
 services:
   db:
     image: postgres:16-alpine
@@ -17,10 +21,14 @@ services:
       timeout: 3s
       retries: 5
 
+  # 🚀 ТЯЖЕЛЫЙ БРАУЗЕР: Выделен в профиль "full". 
+  # В легком режиме он НЕ скачивается и НЕ тратит ОЗУ.
   browserless:
     image: browserless/chrome:latest
     container_name: crm_browserless
     restart: always
+    profiles:
+      - full
     ports:
       - "3000:3000"
     environment:
@@ -99,7 +107,7 @@ services:
       - backend
       - analyzer
 
-  # 🔥 БЭКАП: Каждый час + мгновенный дамп при старте
+  # 🔥 БЭКАП: Регламент Живых Пазлов СУБД (Каждые 3 часа)
   backup:
     image: prodrigestivill/postgres-backup-local:latest
     container_name: crm_backup_service
@@ -114,7 +122,8 @@ services:
       - POSTGRES_PASSWORD=crm_secure_password
       - POSTGRES_EXTRA_OPTS=-Z 9
       - BACKUP_NUM_KEEP=30
-      - BACKUP_FREQUENCY=60m
+      - BACKUP_FREQUENCY=cron
+      - BACKUP_CRON=0 */3 * * *
       - BACKUP_ON_START=TRUE
     depends_on:
       db:
@@ -130,7 +139,7 @@ services:
       db:
         condition: service_healthy
 
-  qa_orchestrator:
+  crm_qa_orchestrator:
     build: ./services/qa_orchestrator
     container_name: crm_qa_orchestrator
     restart: always
@@ -141,13 +150,13 @@ services:
     environment:
       - GATEWAY_URL=http://gateway:80
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+      # 🔥 ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА: "1" — легкий (без Chromium), "0" — честные клики
+      - LIGHTWEIGHT_MODE=1
     depends_on:
       gateway:
         condition: service_started
       db:
         condition: service_healthy
-      browserless:
-        condition: service_started
     deploy:
       resources:
         limits:

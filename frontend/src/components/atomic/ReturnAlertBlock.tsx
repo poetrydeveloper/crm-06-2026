@@ -17,46 +17,18 @@ export const ReturnAlertBlock: React.FC<ReturnAlertBlockProps> = ({ relation, on
   if (!relation) return null;
 
   return (
-    <div style={{ 
-      background: relation.has_parent_relation ? '#2c1a04' : '#141e17', 
-      border: relation.has_parent_relation ? '1px solid #e65100' : '1px solid #2ea44f', 
-      padding: '15px 20px', 
-      borderRadius: '6px', 
-      marginBottom: '25px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center'
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <span style={{ 
-          fontWeight: 'bold', 
-          color: relation.has_parent_relation ? '#ffb74d' : '#a5d6a7',
-          fontSize: '14px'
-        }}>
-          {relation.has_parent_relation ? '⚠️ ОБНАРУЖЕН РАЗДЕРБАНЕННЫЙ НАБОР' : '✔️ ЧИСТАЯ РОЗНИЧНАЯ ЕДИНИЦА'}
-        </span>
-        <p style={{ margin: 0, fontSize: '13px', color: '#ddd' }}>{relation.message}</p>
+    <div className={`alert ${relation.has_parent_relation ? 'alert-warning' : 'alert-success'} mb-3`}>
+      <div className="d-flex justify-between align-center">
+        <div>
+          <strong>{relation.has_parent_relation ? '⚠️ Разобранный набор' : '✔️ Независимая единица'}</strong>
+          <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>{relation.message}</p>
+        </div>
+        {relation.has_parent_relation && (
+          <button className="btn btn-sm btn-outline" onClick={onNavigateToAssembly}>
+            К сборке
+          </button>
+        )}
       </div>
-
-      {relation.has_parent_relation && (
-        <button
-          type="button"
-          onClick={onNavigateToAssembly}
-          style={{ 
-            background: 'transparent', 
-            color: '#4fa8ff', 
-            border: '1px solid #4fa8ff', 
-            padding: '6px 14px', 
-            borderRadius: '4px', 
-            cursor: 'pointer', 
-            fontWeight: 'bold',
-            fontSize: '12px',
-            transition: 'all 0.2s'
-          }}
-        >
-          ⚙️ Перейти к сборке наборов
-        </button>
-      )}
     </div>
   );
 };

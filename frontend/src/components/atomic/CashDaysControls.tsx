@@ -10,38 +10,21 @@ interface CashDaysControlsProps {
 export const CashDaysControls: React.FC<CashDaysControlsProps> = ({
   onOpenDay,
   onCloseDay,
-  onEmergencyReopen
+  onEmergencyReopen,
 }) => {
   return (
-    <div style={{ 
-      display: 'flex', 
-      gap: '12px', 
-      background: '#1a1a1a', 
-      padding: '15px', 
-      borderRadius: '6px', 
-      border: '1px solid #333',
-      marginBottom: '20px'
-    }}>
-      <button
-        onClick={onOpenDay}
-        style={{ background: '#2ea44f', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-      >
-        🔓 Открыть день
-      </button>
-      
-      <button
-        onClick={onCloseDay}
-        style={{ background: '#ff4d4d', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-      >
-        🔒 Закрыть день
-      </button>
-
-      <button
-        onClick={onEmergencyReopen}
-        style={{ background: '#333', color: '#ffb74d', border: '1px solid #444', padding: '10px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', marginLeft: 'auto' }}
-      >
-        ⚡ Экстренно переоткрыть смену
-      </button>
+    <div className="card mb-3">
+      <div className="d-flex gap-12">
+        <button className="btn btn-success" onClick={onOpenDay}>
+          Открыть смену
+        </button>
+        <button className="btn btn-danger" onClick={onCloseDay}>
+          Закрыть смену
+        </button>
+        <button className="btn btn-warning" onClick={onEmergencyReopen} style={{ marginLeft: 'auto' }}>
+          Экстренное переоткрытие
+        </button>
+      </div>
     </div>
   );
 };

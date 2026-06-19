@@ -1,113 +1,191 @@
 // frontend/src/pages/cashbox/Cashbox.tsx
 import React, { useState, useEffect } from 'react';
-import { CategoryTree } from '../../components/atomic/CategoryTree';
 import { CashboxSearch } from '../../components/atomic/CashboxSearch';
 import { CashboxStatus } from '../../components/atomic/CashboxStatus';
 import { CashboxShowcase } from '../../components/atomic/CashboxShowcase';
 import { CashboxCart } from '../../components/atomic/CashboxCart';
 
-interface Category { id: number; name: string; parent_id: number | null; }
-interface PhysicalUnit {
-  id: number; name: string; code: string; unique_serial_number: string;
-  recommended_retail_price: number; physical_status: 'IN_STORE' | 'SOLD' | 'LOST' | 'IN_DISASSEMBLED' | 'ABSORBED';
+interface Product {
+  id: number;
+  name: string;
+  code: string;
+  recommended_retail_price: number;
+  available_qty: number;
 }
-interface CartItem { unit: PhysicalUnit; quantity: number; }
+
+interface CartItem {
+  product: Product;
+  quantity: number;
+  price: number;
+}
 
 export const Cashbox: React.FC = () => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [serialSearchQuery, setSerialSearchQuery] = useState('');
   const [cashDayStatus] = useState<'ЗАКРЫТА' | 'ОТКРЫТА'>('ОТКРЫТА');
-  const [foundUnits, setFoundUnits] = useState<PhysicalUnit[]>([]);
+  const [foundProducts, setFoundProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentType, setPaymentType] = useState<'cash' | 'card' | 'credit'>('cash');
+  const [saleHistory, setSaleHistory] = useState<Array<{ name: string; price: number; time: string }>>([]);
 
-  // 📥 Загрузка категорий для левого сайдбара
+  // Умный поиск товаров
   useEffect(() => {
-    (async () => {
-      try {
-        const response = await fetch('/api/v1/catalog/categories');
-        if (response.ok) {
-          const data = await response.json();
-          setCategories(Array.isArray(data) ? data : (data.categories || data.data || []));
-        }
-      } catch (e) { console.error('Ошибка категорий:', e); }
-    })();
-  }, []);
-
-  // 🔍 Умный поиск по серийному номеру с дебаунсом
-  useEffect(() => {
-    if (!serialSearchQuery) { setFoundUnits([]); return; }
-    const delayDebounceFn = setTimeout(async () => {
+    if (serialSearchQuery.length < 2) {
+      setFoundProducts([]);
+      return;
+    }
+    const delay = setTimeout(async () => {
       try {
         const response = await fetch(`/api/v1/catalog/search?q=${encodeURIComponent(serialSearchQuery)}`);
         if (response.ok) {
           const data = await response.json();
-          const results = Array.isArray(data) ? data : (data.products || data.data || []);
-          setFoundUnits(results.map((item: any, i: number) => ({
-            id: item.id || i, name: item.name || 'Товар без названия', code: item.code || 'ND',
-            unique_serial_number: serialSearchQuery, recommended_retail_price: item.recommended_retail_price || 0,
-            physical_status: 'IN_STORE'
-          })));
+          setFoundProducts(Array.isArray(data) ? data : []);
         }
-      } catch (e) { console.error('Ошибка поиска:', e); }
+      } catch (e) {
+        console.error('Ошибка поиска:', e);
+      }
     }, 300);
-    return () => clearTimeout(delayDebounceFn);
+    return () => clearTimeout(delay);
   }, [serialSearchQuery]);
 
-  const handleAddToBag = (unit: PhysicalUnit) => {
-    setCart(prev => prev.find(i => i.unit.unique_serial_number === unit.unique_serial_number) 
-      ? prev : [...prev, { unit, quantity: 1 }]);
+  const handleAddToCart = (product: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.product.id === product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [...prev, { product, quantity: 1, price: product.recommended_retail_price }];
+    });
   };
 
-  // 🔥 ОБНОВЛЕННАЯ СЕТЕВАЯ ИНТЕГРАЦИЯ: Честное проведение продажи чека
+  const handleRemoveFromCart = (productId: number) => {
+    setCart((prev) => prev.filter((i) => i.product.id !== productId));
+  };
+
+  const handleUpdateQuantity = (productId: number, quantity: number) => {
+    if (quantity < 1) return;
+    setCart((prev) =>
+      prev.map((i) => (i.product.id === productId ? { ...i, quantity } : i))
+    );
+  };
+
+  const handleUpdatePrice = (productId: number, price: number) => {
+    setCart((prev) =>
+      prev.map((i) => (i.product.id === productId ? { ...i, price } : i))
+    );
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
-    const salePayload = {
-      items: cart.map(item => ({
-        product_id: item.unit.id,
-        quantity: item.quantity
-      })),
-      payment_type: paymentType
-    };
+    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const amountCash = paymentType === 'cash' ? totalAmount : 0;
+    const amountCard = paymentType === 'card' ? totalAmount : 0;
+    const amountCredit = paymentType === 'credit' ? totalAmount : 0;
 
-    try {
-      const response = await fetch('/api/v1/cash/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(salePayload)
-      });
+    // Продаём каждый товар отдельным запросом
+    let allSuccess = true;
+    for (const item of cart) {
+      try {
+        const response = await fetch('/api/v1/cash/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_id: item.product.id,
+            sale_price: item.price,
+            amount_cash: paymentType === 'cash' ? item.price * item.quantity : 0,
+            amount_card: paymentType === 'card' ? item.price * item.quantity : 0,
+            amount_credit: paymentType === 'credit' ? item.price * item.quantity : 0,
+          }),
+        });
 
-      if (response.ok) {
-        alert('🎉 Чек успешно проведён! Товар списан в СУБД со статусом SOLD, лог операции 0401/0402 зафиксирован.');
-        setCart([]);
-        setSerialSearchQuery('');
-      } else {
-        const errText = await response.text();
-        console.error('Ошибка проведения продажи:', errText);
-        // Резервный фоллбэк для работы в браузере на чистой базе данных
-        alert(`Симуляция: Чек на сумму ${cart.reduce((s, i) => s + i.unit.recommended_retail_price, 0)} ₽ успешно закрыт (${paymentType}).`);
-        setCart([]);
-        setSerialSearchQuery('');
+        if (response.ok) {
+          setSaleHistory((prev) => [
+            ...prev,
+            {
+              name: item.product.name.replace(/_/g, ' '),
+              price: item.price * item.quantity,
+              time: new Date().toLocaleTimeString('ru-RU'),
+            },
+          ]);
+        } else {
+          const err = await response.json();
+          console.error('Ошибка продажи:', err);
+          allSuccess = false;
+        }
+      } catch (e) {
+        console.error('Сетевая ошибка:', e);
+        allSuccess = false;
       }
-    } catch (error) {
-      console.error('Сетевая ошибка кассового узла:', error);
-      setCart([]);
-      setSerialSearchQuery('');
     }
+
+    if (allSuccess) {
+      alert('Чек успешно проведён');
+    } else {
+      alert('Некоторые позиции не удалось провести. Проверьте остатки.');
+    }
+
+    setCart([]);
+    setSerialSearchQuery('');
+    setFoundProducts([]);
   };
 
+  const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 60px)', background: '#121212', color: '#fff' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px', background: '#1a1a1a', borderBottom: '1px solid #333' }}>
-        <CashboxSearch value={serialSearchQuery} onChange={setSerialSearchQuery} />
-        <CashboxStatus status={cashDayStatus} />
+    <div className="page-content">
+      <div className="card mb-3">
+        <div className="d-flex justify-between align-center">
+          <CashboxSearch value={serialSearchQuery} onChange={setSerialSearchQuery} />
+          <CashboxStatus status={cashDayStatus} />
+        </div>
       </div>
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <CategoryTree categories={categories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} onCreateCategory={()=>{}} onEditCategory={()=>{}} onDeleteCategory={()=>{}} />
-        <CashboxShowcase units={foundUnits} searchQuery={serialSearchQuery} onAddToBag={handleAddToBag} />
-        <CashboxCart cart={cart} paymentType={paymentType} onPaymentTypeChange={setPaymentType} onRemoveFromBag={(s) => setCart(p => p.filter(i => i.unit.unique_serial_number !== s))} onCheckout={handleCheckout} />
+
+      <div className="d-flex gap-16" style={{ alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <CashboxShowcase products={foundProducts} onAddToCart={handleAddToCart} />
+
+          {/* История продаж текущей смены */}
+          {saleHistory.length > 0 && (
+            <div className="card mt-3">
+              <h3 className="card-title">Продажи текущей смены</h3>
+              <div className="table-wrapper">
+                <table className="table" style={{ fontSize: '13px' }}>
+                  <thead>
+                    <tr>
+                      <th>Время</th>
+                      <th>Товар</th>
+                      <th style={{ textAlign: 'right' }}>Сумма</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {saleHistory.map((sale, idx) => (
+                      <tr key={idx}>
+                        <td className="text-muted">{sale.time}</td>
+                        <td style={{ textTransform: 'capitalize' }}>{sale.name}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>
+                          {sale.price.toFixed(2)} ₽
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <CashboxCart
+          cart={cart}
+          paymentType={paymentType}
+          onPaymentTypeChange={setPaymentType}
+          onRemoveFromCart={handleRemoveFromCart}
+          onUpdateQuantity={handleUpdateQuantity}
+          onUpdatePrice={handleUpdatePrice}
+          onCheckout={handleCheckout}
+          totalAmount={totalAmount}
+        />
       </div>
     </div>
   );

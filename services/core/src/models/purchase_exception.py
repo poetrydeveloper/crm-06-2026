@@ -1,7 +1,8 @@
 # services/core/src/models/purchase_exception.py
-from sqlalchemy import Column, Integer, ForeignKey
-from sqlalchemy.orm import relationship
-from src.models.base import Base
+from sqlalchemy import Integer, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from .base import Base
+from .product import Product
 
 class PurchaseException(Base):
     """
@@ -10,7 +11,7 @@ class PurchaseException(Base):
     """
     __tablename__ = "purchase_exceptions"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), unique=True, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), unique=True, nullable=False)
     
-    product = relationship("Product")
+    product: Mapped["Product"] = relationship("Product")
