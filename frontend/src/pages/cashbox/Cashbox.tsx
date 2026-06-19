@@ -19,13 +19,55 @@ interface CartItem {
   price: number;
 }
 
+interface SaleRecord {
+  time: string;
+  product_name: string;
+  price: number;
+  serial_number: string;
+  event_id: number;
+}
+
 export const Cashbox: React.FC = () => {
   const [serialSearchQuery, setSerialSearchQuery] = useState('');
-  const [cashDayStatus] = useState<'ЗАКРЫТА' | 'ОТКРЫТА'>('ОТКРЫТА');
+  const [cashDayStatus, setCashDayStatus] = useState<'ЗАКРЫТА' | 'ОТКРЫТА'>('ОТКРЫТА');
   const [foundProducts, setFoundProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentType, setPaymentType] = useState<'cash' | 'card' | 'credit'>('cash');
-  const [saleHistory, setSaleHistory] = useState<Array<{ name: string; price: number; time: string }>>([]);
+  const [saleHistory, setSaleHistory] = useState<SaleRecord[]>([]);
+
+  // Загрузка истории продаж из БД
+  const loadSaleHistory = async () => {
+    try {
+      const response = await fetch('/api/v1/cash/days/current/sales');
+      if (response.ok) {
+        const data = await response.json();
+        setSaleHistory(data.sales || []);
+      }
+    } catch (e) {
+      console.error('Ошибка загрузки истории:', e);
+    }
+  };
+
+  // Проверка статуса смены
+  const checkCashDayStatus = async () => {
+    try {
+      const response = await fetch('/api/v1/cash/days');
+      if (response.ok) {
+        const data = await response.json();
+        const days = data.days || [];
+        if (days.length > 0) {
+          setCashDayStatus(days[0].status);
+        }
+      }
+    } catch (e) {
+      console.error('Ошибка проверки смены:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadSaleHistory();
+    checkCashDayStatus();
+  }, []);
 
   // Умный поиск товаров
   useEffect(() => {
@@ -79,12 +121,6 @@ export const Cashbox: React.FC = () => {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
-    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const amountCash = paymentType === 'cash' ? totalAmount : 0;
-    const amountCard = paymentType === 'card' ? totalAmount : 0;
-    const amountCredit = paymentType === 'credit' ? totalAmount : 0;
-
-    // Продаём каждый товар отдельным запросом
     let allSuccess = true;
     for (const item of cart) {
       try {
@@ -100,16 +136,7 @@ export const Cashbox: React.FC = () => {
           }),
         });
 
-        if (response.ok) {
-          setSaleHistory((prev) => [
-            ...prev,
-            {
-              name: item.product.name.replace(/_/g, ' '),
-              price: item.price * item.quantity,
-              time: new Date().toLocaleTimeString('ru-RU'),
-            },
-          ]);
-        } else {
+        if (!response.ok) {
           const err = await response.json();
           console.error('Ошибка продажи:', err);
           allSuccess = false;
@@ -129,6 +156,7 @@ export const Cashbox: React.FC = () => {
     setCart([]);
     setSerialSearchQuery('');
     setFoundProducts([]);
+    await loadSaleHistory();
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -146,24 +174,33 @@ export const Cashbox: React.FC = () => {
         <div style={{ flex: 1 }}>
           <CashboxShowcase products={foundProducts} onAddToCart={handleAddToCart} />
 
-          {/* История продаж текущей смены */}
+          {/* История продаж текущей смены из БД */}
           {saleHistory.length > 0 && (
             <div className="card mt-3">
-              <h3 className="card-title">Продажи текущей смены</h3>
+              <div className="d-flex justify-between align-center mb-3">
+                <h3 className="card-title" style={{ margin: 0 }}>Продажи текущей смены</h3>
+                <button className="btn btn-sm btn-outline" onClick={loadSaleHistory}>
+                  Обновить
+                </button>
+              </div>
               <div className="table-wrapper">
                 <table className="table" style={{ fontSize: '13px' }}>
                   <thead>
                     <tr>
                       <th>Время</th>
                       <th>Товар</th>
+                      <th>Серийный номер</th>
                       <th style={{ textAlign: 'right' }}>Сумма</th>
                     </tr>
                   </thead>
                   <tbody>
                     {saleHistory.map((sale, idx) => (
                       <tr key={idx}>
-                        <td className="text-muted">{sale.time}</td>
-                        <td style={{ textTransform: 'capitalize' }}>{sale.name}</td>
+                        <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(sale.time).toLocaleTimeString('ru-RU')}
+                        </td>
+                        <td style={{ textTransform: 'capitalize' }}>{sale.product_name.replace(/_/g, ' ')}</td>
+                        <td className="text-mono" style={{ fontSize: '12px' }}>{sale.serial_number}</td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>
                           {sale.price.toFixed(2)} ₽
                         </td>
