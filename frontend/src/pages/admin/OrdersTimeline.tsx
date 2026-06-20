@@ -1,44 +1,34 @@
 // frontend/src/pages/admin/OrdersTimeline.tsx
 import React, { useState, useEffect } from 'react';
-import { OrdersTabs } from '../../components/atomic/OrdersTabs';
-import { PreOrdersTable } from '../../components/atomic/PreOrdersTable';
-import type { PreOrderRecord } from '../../components/atomic/PreOrdersTable';
-import { RuleCreatorBlock } from '../../components/atomic/RuleCreatorBlock';
-import { ActiveRulesList } from '../../components/atomic/ActiveRulesList';
-import { OrdersListContainer } from '../../components/atomic/OrdersListContainer';
-
-interface OrderItem {
-  product_name: string;
-  quantity: number;
-}
-
-interface TimelineOrder {
-  supplier_order_id: number;
-  supplier_name: string;
-  total_financial_load: number;
-  status: string;
-  items?: OrderItem[];
-}
-
-interface RuleRecord {
-  id: number;
-  price_operator: string;
-  price_value: number;
-  name_contains: string | null;
-  stock_threshold: number;
-}
 
 type TabType = 'active' | 'archived' | 'preorder';
 
+interface OrderItem {
+  product_id: number;
+  product_name: string;
+  product_code: string;
+  qty_in_order: number;
+  avg_purchase_price: number;
+  qty_in_all_orders: number;
+  qty_in_store: number;
+}
+
+interface OrderGroup {
+  order_key: string;
+  order_date: string;
+  supplier_id: number;
+  supplier_name: string;
+  items: OrderItem[];
+}
+
 export const OrdersTimeline: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('active');
-  const [activeOrders, setActiveOrders] = useState<TimelineOrder[]>([]);
-  const [archivedOrders, setArchivedOrders] = useState<TimelineOrder[]>([]);
-  const [preOrders, setPreOrders] = useState<PreOrderRecord[]>([]);
-  const [rules, setRules] = useState<RuleRecord[]>([]);
+  const [activeOrders, setActiveOrders] = useState<OrderGroup[]>([]);
+  const [archivedOrders, setArchivedOrders] = useState<OrderGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadOrdersData = async () => {
+  const loadOrders = async () => {
+    setLoading(true);
     try {
       const response = await fetch('/api/v1/warehouse/orders');
       if (response.ok) {
@@ -48,83 +38,14 @@ export const OrdersTimeline: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const loadPreOrdersData = async () => {
-    try {
-      const response = await fetch('/api/v1/warehouse/pre-orders');
-      if (response.ok) {
-        const data = await response.json();
-        const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-        setPreOrders(items);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadRulesData = async () => {
-    try {
-      const response = await fetch('/api/v1/warehouse/purchase-rules');
-      if (response.ok) {
-        const data = await response.json();
-        setRules(Array.isArray(data) ? data : []);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const syncAllData = async () => {
-    setLoading(true);
-    await Promise.all([loadOrdersData(), loadPreOrdersData(), loadRulesData()]);
-    setLoading(false);
   };
 
   useEffect(() => {
-    syncAllData();
+    loadOrders();
   }, []);
-
-  const handleQuickOrder = (record: PreOrderRecord) => {
-    try {
-      const cartRaw = localStorage.getItem('purchase_cart');
-      const cartList = cartRaw ? JSON.parse(cartRaw) : [];
-      const existingIdx = cartList.findIndex((item: any) => item.product_id === record.product_id);
-
-      if (existingIdx > -1) {
-        cartList[existingIdx].quantity += record.recommended_qty;
-      } else {
-        cartList.push({
-          product_id: record.product_id,
-          product_name: record.product_name,
-          product_code: record.product_code,
-          quantity: record.recommended_qty,
-          estimated_purchase_price: record.estimated_purchase_price,
-        });
-      }
-
-      localStorage.setItem('purchase_cart', JSON.stringify(cartList));
-      alert(`Товар "${record.product_name}" добавлен в корзину`);
-      setPreOrders((prev) => prev.filter((p) => p.pre_order_id !== record.pre_order_id));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleExcludeProduct = async (productId: number) => {
-    try {
-      await fetch('/api/v1/warehouse/pre-orders/exclude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: productId }),
-      });
-      alert('Товар исключён из предзаказов');
-      loadPreOrdersData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   return (
     <div className="page-content">
@@ -132,39 +53,132 @@ export const OrdersTimeline: React.FC = () => {
         <div>
           <h2 className="page-title">Управление закупками</h2>
           <p className="text-muted" style={{ marginTop: '4px' }}>
-            Контроль поставок, правила автозаказа, предзаказы
+            Заявки по датам и поставщикам
           </p>
         </div>
-        <button className="btn btn-outline" onClick={syncAllData}>
+        <button className="btn btn-outline" onClick={loadOrders}>
           Обновить
         </button>
       </div>
 
-      <OrdersTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="d-flex gap-8 mb-3">
+        <button
+          className={`btn btn-sm ${activeTab === 'active' ? 'btn-primary' : 'btn-outline'}`}
+          onClick={() => setActiveTab('active')}
+        >
+          Активные заявки
+        </button>
+        <button
+          className={`btn btn-sm ${activeTab === 'archived' ? 'btn-primary' : 'btn-outline'}`}
+          onClick={() => setActiveTab('archived')}
+        >
+          Архив
+        </button>
+        <button
+          className={`btn btn-sm ${activeTab === 'preorder' ? 'btn-primary' : 'btn-outline'}`}
+          onClick={() => setActiveTab('preorder')}
+        >
+          Умный предзаказ
+        </button>
+      </div>
 
       {loading ? (
         <div className="loading-text">Загрузка...</div>
       ) : (
         <>
           {activeTab === 'active' && (
-            <OrdersListContainer orders={activeOrders} emptyMessage="Нет активных поставок" />
+            <OrdersListView orders={activeOrders} emptyMessage="Нет активных заявок" />
           )}
           {activeTab === 'archived' && (
-            <OrdersListContainer orders={archivedOrders} emptyMessage="Архив пуст" />
+            <OrdersListView orders={archivedOrders} emptyMessage="Архив пуст" />
           )}
           {activeTab === 'preorder' && (
-            <>
-              <RuleCreatorBlock onRuleCreated={syncAllData} />
-              <ActiveRulesList rules={rules} />
-              <PreOrdersTable
-                records={preOrders}
-                onQuickOrder={handleQuickOrder}
-                onExcludeProduct={handleExcludeProduct}
-              />
-            </>
+            <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+              <p className="text-muted">В разработке</p>
+            </div>
           )}
         </>
       )}
+    </div>
+  );
+};
+
+
+const OrdersListView: React.FC<{ orders: OrderGroup[]; emptyMessage: string }> = ({
+  orders,
+  emptyMessage,
+}) => {
+  if (orders.length === 0) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+        <p className="text-muted">{emptyMessage}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {orders.map((order) => (
+        <div key={order.order_key} className="card mb-3">
+          <div
+            className="d-flex justify-between align-center mb-3"
+            style={{ borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}
+          >
+            <div>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>
+                {order.supplier_name}
+              </h3>
+              <div className="text-muted" style={{ fontSize: '13px', marginTop: '2px' }}>
+                {new Date(order.order_date).toLocaleDateString('ru-RU')}
+              </div>
+            </div>
+            <span className="badge badge-info">
+              {order.items.length} поз.
+            </span>
+          </div>
+
+          <div className="table-wrapper">
+            <table className="table" style={{ fontSize: '13px' }}>
+              <thead>
+                <tr>
+                  <th>Артикул</th>
+                  <th>Наименование</th>
+                  <th style={{ textAlign: 'right' }}>Цена закупки</th>
+                  <th style={{ textAlign: 'center' }}>В заявке</th>
+                  <th style={{ textAlign: 'center' }}>Всего в заявках</th>
+                  <th style={{ textAlign: 'center' }}>В магазине</th>
+                </tr>
+              </thead>
+              <tbody>
+                {order.items.map((item, idx) => (
+                  <tr key={idx}>
+                    <td className="text-mono">{item.product_code}</td>
+                    <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>
+                      {item.product_name.replace(/_/g, ' ')}
+                    </td>
+                    <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 600 }}>
+                      {item.avg_purchase_price.toFixed(2)} ₽
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                      {item.qty_in_order}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {item.qty_in_all_orders}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span
+                        className={`badge ${item.qty_in_store === 0 ? 'badge-danger' : item.qty_in_store < 3 ? 'badge-warning' : 'badge-success'}`}
+                      >
+                        {item.qty_in_store} шт.
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

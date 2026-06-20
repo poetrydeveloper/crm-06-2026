@@ -8,8 +8,16 @@ import { OrderModal } from '../../components/atomic/OrderModal';
 interface SupplierOrder {
   supplier_order_id: number;
   supplier_name: string;
+  order_date: string;
   total_financial_load: number;
   status: string;
+  items: Array<{
+    product_id: number;
+    product_name: string;
+    product_code: string;
+    qty_in_order: number;
+    avg_purchase_price: number;
+  }>;
 }
 
 interface Supplier {
@@ -23,8 +31,7 @@ export const Receipts: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
-  const [orderItems, setOrderItems] = useState<Record<number, any[]>>({});
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [cartCount, setCartCount] = useState(0);
 
   const loadSuppliersList = async () => {
@@ -32,9 +39,9 @@ export const Receipts: React.FC = () => {
       const response = await fetch('/api/v1/warehouse/suppliers');
       if (response.ok) {
         const data = await response.json();
-        const suppliersArray = Array.isArray(data) ? data : data.suppliers || [];
-        setSuppliers(suppliersArray);
-        return suppliersArray;
+        const arr = Array.isArray(data) ? data : data.suppliers || [];
+        setSuppliers(arr);
+        return arr;
       }
     } catch (e) {
       console.error(e);
@@ -44,37 +51,20 @@ export const Receipts: React.FC = () => {
 
   const loadActiveOrders = async () => {
     try {
-      const suppliersList = await loadSuppliersList();
-      const supplierNames: Record<number, string> = {};
-      suppliersList.forEach((s: Supplier) => {
-        supplierNames[s.supplier_id] = s.name;
-      });
+      await loadSuppliersList();
 
       const response = await fetch('/api/v1/warehouse/orders');
       if (response.ok) {
         const data = await response.json();
-        const ordersArray = data.orders || [];
-        setOrders(
-          ordersArray.map((o: any) => ({
-            supplier_order_id: o.supplier_id,
-            supplier_name: supplierNames[o.supplier_id] || `Поставщик #${o.supplier_id}`,
-            total_financial_load: o.total_amount || 0,
-            status: 'В ПУТИ',
-          }))
-        );
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadOrderItems = async (supplierId: number) => {
-    if (orderItems[supplierId]) return;
-    try {
-      const response = await fetch(`/api/v1/warehouse/orders/${supplierId}/items`);
-      if (response.ok) {
-        const data = await response.json();
-        setOrderItems((prev) => ({ ...prev, [supplierId]: data.items || [] }));
+        const activeOrders = (data.active || []).map((o: any) => ({
+          supplier_order_id: o.supplier_id,
+          supplier_name: o.supplier_name,
+          order_date: o.order_date,
+          total_financial_load: o.items.reduce((sum: number, i: any) => sum + (i.avg_purchase_price || 0) * (i.qty_in_order || 0), 0),
+          status: 'В ПУТИ',
+          items: o.items || [],
+        }));
+        setOrders(activeOrders);
       }
     } catch (e) {
       console.error(e);
@@ -83,8 +73,8 @@ export const Receipts: React.FC = () => {
 
   const checkPurchaseCart = () => {
     try {
-      const cartRaw = localStorage.getItem('purchase_cart');
-      setCartCount(cartRaw ? JSON.parse(cartRaw).length : 0);
+      const raw = localStorage.getItem('purchase_cart');
+      setCartCount(raw ? JSON.parse(raw).length : 0);
     } catch {
       setCartCount(0);
     }
@@ -101,24 +91,25 @@ export const Receipts: React.FC = () => {
     reloadAll();
   }, []);
 
-  const handleToggleRow = (id: number) => {
-    setExpandedOrderId((prev) => {
-      const next = prev === id ? null : id;
-      if (next !== null) loadOrderItems(next);
-      return next;
-    });
+  const handleToggleRow = (id: string) => {
+    setExpandedOrderId((prev) => (prev === id ? null : id));
   };
 
-  const handleConfirmReceipt = async (supplierId: number, productId: number) => {
+  const handleConfirmReceipt = async (supplierId: number, unitIds: number[]) => {
     try {
-      await fetch('/api/v1/warehouse/receipts', {
+      const res = await fetch('/api/v1/warehouse/receipts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           supplier_id: supplierId,
-          items: [{ product_id: productId, quantity: 1, actual_purchase_price: 250.0 }],
+          unit_ids: unitIds,
         }),
       });
+
+      if (res.ok) {
+        alert(`Принято: ${unitIds.length} шт.`);
+        loadActiveOrders();
+      }
     } catch (e) {
       console.error(e);
     }
@@ -144,7 +135,6 @@ export const Receipts: React.FC = () => {
         <ReceiptsTable
           orders={orders}
           expandedOrderId={expandedOrderId}
-          orderItems={orderItems}
           onToggleRow={handleToggleRow}
           onConfirmReceipt={handleConfirmReceipt}
           onOpenModal={() => setIsModalOpen(true)}
