@@ -66,19 +66,19 @@ export const Catalog: React.FC = () => {
   };
 
   const loadProducts = async () => {
-  try {
-    const url = searchQuery
-      ? `/api/v1/catalog/search?q=${encodeURIComponent(searchQuery)}`
-      : '/api/v1/catalog/products/all';
-    const response = await fetch(url);
-    if (response.ok) {
-      const data = await response.json();
-      setProducts(Array.isArray(data) ? data : []);
+    try {
+      const url = searchQuery
+        ? `/api/v1/catalog/search?q=${encodeURIComponent(searchQuery)}`
+        : '/api/v1/catalog/products/all';
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setProducts(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки товаров:', error);
     }
-  } catch (error) {
-    console.error('Ошибка загрузки товаров:', error);
-  }
-};
+  };
 
   const loadBrands = async () => {
     try {
@@ -111,35 +111,6 @@ export const Catalog: React.FC = () => {
         body: JSON.stringify({ name: name.trim(), parent_id: selectedCategoryId }),
       });
       loadCategories();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleEditCategory = async (id: number) => {
-    const cat = categories.find((c) => c.id === id);
-    const name = prompt('Новое название категории:', cat?.name);
-    if (!name) return;
-    try {
-      await fetch(`/api/v1/catalog/categories/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), parent_id: cat?.parent_id || null }),
-      });
-      loadCategories();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDeleteCategory = async (id: number) => {
-    if (!confirm('Удалить категорию?')) return;
-    try {
-      const response = await fetch(`/api/v1/catalog/categories/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        loadCategories();
-        if (selectedCategoryId === id) setSelectedCategoryId(null);
-      }
     } catch (e) {
       console.error(e);
     }
@@ -358,8 +329,6 @@ export const Catalog: React.FC = () => {
           selectedCategoryId={selectedCategoryId}
           onSelectCategory={(id) => setSelectedCategoryId(id)}
           onCreateCategory={handleCreateCategory}
-          onEditCategory={handleEditCategory}
-          onDeleteCategory={handleDeleteCategory}
         />
         <ProductGrid
           products={filteredProducts}
