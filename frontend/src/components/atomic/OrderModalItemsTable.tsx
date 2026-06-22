@@ -1,5 +1,5 @@
 // frontend/src/components/atomic/OrderModalItemsTable.tsx
-import React from 'react';
+import React, { useState } from 'react';
 
 export interface PurchaseItem {
   product_id: number;
@@ -15,11 +15,9 @@ interface OrderModalItemsTableProps {
   onRemoveItem: (index: number) => void;
 }
 
-export const OrderModalItemsTable: React.FC<OrderModalItemsTableProps> = ({
-  items,
-  onItemChange,
-  onRemoveItem,
-}) => {
+export const OrderModalItemsTable: React.FC<OrderModalItemsTableProps> = ({ items, onItemChange, onRemoveItem }) => {
+  const [rawPrices, setRawPrices] = useState<Record<number, string>>({});
+
   if (items.length === 0) {
     return (
       <div className="text-muted text-center" style={{ padding: '20px', fontSize: '13px' }}>
@@ -35,7 +33,7 @@ export const OrderModalItemsTable: React.FC<OrderModalItemsTableProps> = ({
           <tr>
             <th>Товар</th>
             <th style={{ width: '70px' }}>Кол-во</th>
-            <th style={{ width: '90px' }}>Цена</th>
+            <th style={{ width: '170px' }}>Цена</th>
             <th style={{ width: '40px' }}></th>
           </tr>
         </thead>
@@ -57,18 +55,35 @@ export const OrderModalItemsTable: React.FC<OrderModalItemsTableProps> = ({
                 />
               </td>
               <td>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  className="form-control"
-                  value={item.estimated_purchase_price}
-                  onChange={(e) => onItemChange(idx, 'estimated_purchase_price', parseFloat(e.target.value) || 0)}
-                  style={{ padding: '4px', textAlign: 'right' }}
-                />
+                <div className="d-flex align-center gap-4">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="form-control"
+                    value={rawPrices[idx] !== undefined ? rawPrices[idx] : String(item.estimated_purchase_price)}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(',', '.');
+                      setRawPrices((prev) => ({ ...prev, [idx]: raw }));
+                      const val = parseFloat(raw);
+                      if (!isNaN(val)) {
+                        onItemChange(idx, 'estimated_purchase_price', val);
+                      }
+                    }}
+                    style={{ width: '90px', textAlign: 'right', padding: '4px' }}
+                  />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--success)', width: '65px', textAlign: 'right' }}>
+                    {item.estimated_purchase_price.toFixed(2)}
+                  </span>
+                </div>
               </td>
               <td style={{ textAlign: 'center' }}>
-                <button type="button" className="btn btn-sm btn-outline" onClick={() => onRemoveItem(idx)} style={{ border: 'none', color: 'var(--danger)' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  onClick={() => onRemoveItem(idx)}
+                  style={{ border: 'none', color: 'var(--danger)' }}
+                >
                   ✕
                 </button>
               </td>

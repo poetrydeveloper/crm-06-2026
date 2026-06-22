@@ -12,9 +12,11 @@ export const OrderQuickManualAdd: React.FC<OrderQuickManualAddProps> = ({ onAddI
 
   const handleAdd = () => {
     if (!productId || !quantity || !price) return;
-    onAddItem(parseInt(productId), parseInt(quantity) || 1, parseFloat(price) || 0);
+    const parsedPrice = parseFloat(price.replace(',', '.'));
+    onAddItem(parseInt(productId), parseInt(quantity) || 1, isNaN(parsedPrice) ? 0 : parsedPrice);
     setProductId('');
     setQuantity('1');
+    setPrice('100');
   };
 
   return (
@@ -39,13 +41,17 @@ export const OrderQuickManualAdd: React.FC<OrderQuickManualAddProps> = ({ onAddI
           style={{ width: '70px' }}
         />
         <input
-          type="number"
-          min="0"
+          type="text"
+          inputMode="decimal"
           className="form-control"
           value={price}
-          onChange={(e) => setPrice(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            const raw = e.target.value.replace(',', '.');
+            setPrice(raw);
+          }}
           placeholder="Цена"
-          style={{ width: '80px' }}
+          style={{ width: '80px', textAlign: 'right' }}
         />
         <button type="button" className="btn btn-primary btn-sm" onClick={handleAdd}>
           +

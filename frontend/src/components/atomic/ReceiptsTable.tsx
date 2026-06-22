@@ -1,86 +1,50 @@
 // frontend/src/components/atomic/ReceiptsTable.tsx
 import React, { useState } from 'react';
 
-interface OrderItem {
-  product_id: number;
-  product_name: string;
-  product_code: string;
-  qty_in_order: number;
-  avg_purchase_price: number;
-}
-
 interface UnitItem {
   unit_id: number;
-  product_id: number;
-  product_name: string;
-  product_code: string;
   unique_serial_number: string;
   purchase_price: number;
   physical_status: string;
 }
 
+interface ProductItem {
+  product_id: number;
+  product_name: string;
+  product_code: string;
+  units: UnitItem[];
+  expected_count: number;
+  total_count: number;
+}
+
 interface SupplierOrder {
-  supplier_order_id: number;
-  supplier_name: string;
+  order_key: string;
   order_date: string;
+  supplier_id: number;
+  supplier_name: string;
   total_financial_load: number;
-  status: string;
-  items: OrderItem[];
+  products: ProductItem[];
 }
 
 interface ReceiptsTableProps {
   orders: SupplierOrder[];
-  expandedOrderId: string | null;
-  onToggleRow: (id: string) => void;
+  expandedOrderKey: string | null;
+  onToggleRow: (key: string) => void;
   onConfirmReceipt: (supplierId: number, unitIds: number[]) => void;
   onOpenModal: () => void;
 }
 
 export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
   orders,
-  expandedOrderId,
+  expandedOrderKey,
   onToggleRow,
   onConfirmReceipt,
 }) => {
-  const [units, setUnits] = useState<Record<string, UnitItem[]>>({});
   const [selectedUnits, setSelectedUnits] = useState<Set<number>>(new Set());
   const [acceptedUnits, setAcceptedUnits] = useState<Set<number>>(new Set());
-  const [loadingUnits, setLoadingUnits] = useState<Record<string, boolean>>({});
 
-  const loadUnits = async (supplierId: number, orderKey: string) => {
-    if (units[orderKey]) return;
-    setLoadingUnits((prev) => ({ ...prev, [orderKey]: true }));
-    try {
-      const res = await fetch(`/api/v1/warehouse/orders/${supplierId}/items`);
-      if (res.ok) {
-        const data = await res.json();
-        const allUnits = data.items || [];
-        setUnits((prev) => ({ ...prev, [orderKey]: allUnits }));
-        const alreadyAccepted = allUnits
-          .filter((u: UnitItem) => u.physical_status !== 'EXPECTED')
-          .map((u: UnitItem) => u.unit_id);
-        if (alreadyAccepted.length > 0) {
-          setAcceptedUnits((prev) => new Set([...prev, ...alreadyAccepted]));
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingUnits((prev) => ({ ...prev, [orderKey]: false }));
-    }
-  };
-
-  const handleToggle = (orderKey: string, supplierId: number) => {
-    if (expandedOrderId === orderKey) {
-      onToggleRow(orderKey);
-    } else {
-      onToggleRow(orderKey);
-      loadUnits(supplierId, orderKey);
-    }
-  };
-
-  const handleSelectUnit = (unitId: number) => {
-    if (acceptedUnits.has(unitId)) return;
+  const handleSelectUnit = (unitId: number, isAccepted: boolean) => {
+    if (isAccepted) return;
     setSelectedUnits((prev) => {
       const next = new Set(prev);
       if (next.has(unitId)) next.delete(unitId);
@@ -89,8 +53,8 @@ export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
     });
   };
 
-  const handleSelectAll = (unitList: UnitItem[]) => {
-    const available = unitList.filter((u) => !acceptedUnits.has(u.unit_id));
+  const handleSelectAll = (units: UnitItem[]) => {
+    const available = units.filter((u) => u.physical_status === 'EXPECTED');
     if (available.length === 0) return;
     const allSelected = available.every((u) => selectedUnits.has(u.unit_id));
     setSelectedUnits((prev) => {
@@ -103,7 +67,7 @@ export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
     });
   };
 
-  const handleAcceptSelected = async (supplierId: number, orderKey: string) => {
+  const handleAcceptSelected = async (supplierId: number, key: string, units: UnitItem[]) => {
     const ids = Array.from(selectedUnits);
     if (ids.length === 0) return;
 
@@ -116,37 +80,45 @@ export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
     setSelectedUnits(new Set());
   };
 
+  // Сбрасываем accepted при новых данных
+  React.useEffect(() => {
+    setAcceptedUnits(new Set());
+    setSelectedUnits(new Set());
+  }, [orders]);
+
   if (orders.length === 0) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
-        <p className="text-muted">Нет активных заявок</p>
+        <p className="text-muted">Нет активных заявок за выбранный период</p>
       </div>
     );
   }
 
   return (
     <div>
-      {orders.map((order, idx) => {
-        const orderKey = `${order.order_date}_${order.supplier_order_id}_${idx}`;
-        const isExpanded = expandedOrderId === orderKey;
-        const unitList = units[orderKey] || [];
-        const isLoading = loadingUnits[orderKey];
-        const availableUnits = unitList.filter((u) => !acceptedUnits.has(u.unit_id));
-        const allAccepted = unitList.length > 0 && unitList.every((u) => acceptedUnits.has(u.unit_id));
+      {orders.map((order) => {
+        const isExpanded = expandedOrderKey === order.order_key;
+        const allUnits = order.products.flatMap((p) => p.units);
+        const expectedUnits = allUnits.filter((u) => u.physical_status === 'EXPECTED');
+        const allAccepted = expectedUnits.length === 0 || expectedUnits.every((u) => acceptedUnits.has(u.unit_id));
 
         return (
-          <div key={orderKey} className="card mb-3">
+          <div key={order.order_key} className="card mb-3">
             <div
               className="d-flex justify-between align-center"
-              style={{ cursor: 'pointer', paddingBottom: isExpanded ? '12px' : '0', borderBottom: isExpanded ? '1px solid var(--border)' : 'none' }}
-              onClick={() => handleToggle(orderKey, order.supplier_order_id)}
+              style={{
+                cursor: 'pointer',
+                paddingBottom: isExpanded ? '12px' : '0',
+                borderBottom: isExpanded ? '1px solid var(--border)' : 'none',
+              }}
+              onClick={() => onToggleRow(order.order_key)}
             >
               <div className="d-flex align-center gap-8">
                 <span>{isExpanded ? '▼' : '►'}</span>
                 <div>
                   <div style={{ fontWeight: 600 }}>{order.supplier_name}</div>
                   <div className="text-muted" style={{ fontSize: '12px' }}>
-                    {new Date(order.order_date).toLocaleDateString('ru-RU')} — {order.items.length} поз.
+                    {new Date(order.order_date).toLocaleDateString('ru-RU')} — {order.products.length} поз. ({expectedUnits.length} ожидает)
                   </div>
                 </div>
               </div>
@@ -155,16 +127,14 @@ export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
                   {order.total_financial_load.toFixed(2)} ₽
                 </span>
                 <span className={`badge ${allAccepted ? 'badge-success' : 'badge-warning'}`}>
-                  {allAccepted ? 'Выставлено на полку' : order.status}
+                  {allAccepted ? 'Выставлено на полку' : 'В ПУТИ'}
                 </span>
               </div>
             </div>
 
             {isExpanded && (
               <div style={{ paddingTop: '12px' }}>
-                {isLoading ? (
-                  <div className="text-muted text-center" style={{ padding: '16px' }}>Загрузка юнитов...</div>
-                ) : unitList.length === 0 ? (
+                {allUnits.length === 0 ? (
                   <div className="text-muted text-center" style={{ padding: '16px' }}>Нет юнитов</div>
                 ) : (
                   <>
@@ -172,65 +142,77 @@ export const ReceiptsTable: React.FC<ReceiptsTableProps> = ({
                       <label className="d-flex align-center gap-8" style={{ cursor: 'pointer', fontSize: '13px' }}>
                         <input
                           type="checkbox"
-                          checked={availableUnits.length > 0 && availableUnits.every((u) => selectedUnits.has(u.unit_id))}
-                          onChange={() => handleSelectAll(unitList)}
+                          checked={expectedUnits.length > 0 && expectedUnits.every((u) => selectedUnits.has(u.unit_id))}
+                          onChange={() => handleSelectAll(allUnits)}
                         />
-                        Выбрать всё ({availableUnits.length} шт.)
+                        Выбрать всё ({expectedUnits.length} шт.)
                       </label>
                       <button
                         className="btn btn-success btn-sm"
                         disabled={selectedUnits.size === 0}
-                        onClick={() => handleAcceptSelected(order.supplier_order_id, orderKey)}
+                        onClick={() => handleAcceptSelected(order.supplier_id, order.order_key, allUnits)}
                       >
                         Принять выбранное ({selectedUnits.size})
                       </button>
                     </div>
-                    <div className="table-wrapper">
-                      <table className="table" style={{ fontSize: '13px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30px' }}></th>
-                            <th>Серийный номер</th>
-                            <th>Товар</th>
-                            <th style={{ textAlign: 'right' }}>Цена</th>
-                            <th>Статус</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {unitList.map((unit) => (
-                            <tr
-                              key={unit.unit_id}
-                              style={{
-                                background: acceptedUnits.has(unit.unit_id) ? 'var(--bg-tertiary)' : undefined,
-                                opacity: acceptedUnits.has(unit.unit_id) ? 0.7 : 1,
-                              }}
-                            >
-                              <td>
-                                {!acceptedUnits.has(unit.unit_id) && (
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedUnits.has(unit.unit_id)}
-                                    onChange={() => handleSelectUnit(unit.unit_id)}
-                                  />
-                                )}
-                              </td>
-                              <td className="text-mono" style={{ fontSize: '12px' }}>{unit.unique_serial_number}</td>
-                              <td style={{ textTransform: 'capitalize' }}>{unit.product_name.replace(/_/g, ' ')}</td>
-                              <td style={{ textAlign: 'right', color: 'var(--success)' }}>
-                                {unit.purchase_price.toFixed(2)} ₽
-                              </td>
-                              <td>
-                                {acceptedUnits.has(unit.unit_id) ? (
-                                  <span className="badge badge-success">✔ Принят</span>
-                                ) : (
-                                  <span className="badge badge-warning">Ожидает</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+
+                    {order.products.map((product) => (
+                      <div key={product.product_id} className="mb-3">
+                        <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px', textTransform: 'capitalize' }}>
+                          {product.product_name.replace(/_/g, ' ')}
+                        </div>
+                        <div className="text-muted text-mono" style={{ fontSize: '11px', marginBottom: '6px' }}>
+                          {product.product_code} — {product.expected_count}/{product.total_count} ожидает
+                        </div>
+                        <div className="table-wrapper">
+                          <table className="table" style={{ fontSize: '13px' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ width: '30px' }}></th>
+                                <th>Серийный номер</th>
+                                <th style={{ textAlign: 'right' }}>Цена</th>
+                                <th>Статус</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {product.units.map((unit) => {
+                                const isAccepted = unit.physical_status !== 'EXPECTED' || acceptedUnits.has(unit.unit_id);
+                                return (
+                                  <tr
+                                    key={unit.unit_id}
+                                    style={{
+                                      background: isAccepted ? 'var(--bg-tertiary)' : undefined,
+                                      opacity: isAccepted ? 0.7 : 1,
+                                    }}
+                                  >
+                                    <td>
+                                      {!isAccepted && (
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedUnits.has(unit.unit_id)}
+                                          onChange={() => handleSelectUnit(unit.unit_id, isAccepted)}
+                                        />
+                                      )}
+                                    </td>
+                                    <td className="text-mono" style={{ fontSize: '12px' }}>{unit.unique_serial_number}</td>
+                                    <td style={{ textAlign: 'right', color: 'var(--success)' }}>
+                                      {unit.purchase_price.toFixed(2)} ₽
+                                    </td>
+                                    <td>
+                                      {isAccepted ? (
+                                        <span className="badge badge-success">✔ Принят</span>
+                                      ) : (
+                                        <span className="badge badge-warning">Ожидает</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
                   </>
                 )}
               </div>

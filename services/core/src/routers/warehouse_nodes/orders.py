@@ -14,7 +14,6 @@ router = APIRouter(tags=["Склад: Заказы поставщикам и FIF
 @router.get("/orders", status_code=200)
 async def list_orders(db: AsyncSession = Depends(get_db)):
     """📋 Получить все заявки — активные (EXPECTED) и архив (только завершённые, без EXPECTED)"""
-    # Активные заявки: юниты в EXPECTED
     active_rows = (await db.execute(
         select(
             ProductUnit.supplier_id,
@@ -32,7 +31,6 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
         .order_by(func.date(ProductUnit.created_at).desc(), ProductUnit.supplier_id)
     )).all()
 
-    # Все принятые юниты (IN_STORE)
     archive_rows = (await db.execute(
         select(
             ProductUnit.supplier_id,
@@ -50,7 +48,6 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
         .order_by(func.date(ProductUnit.created_at).desc(), ProductUnit.supplier_id)
     )).all()
 
-    # Общее количество на складе по product_id
     stock_result = (await db.execute(
         select(
             ProductUnit.product_id,
@@ -61,7 +58,6 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
     )).all()
     stock_map = {row[0]: row[1] for row in stock_result}
 
-    # Общее количество во всех заявках по product_id
     all_orders_result = (await db.execute(
         select(
             ProductUnit.product_id,
@@ -72,7 +68,6 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
     )).all()
     all_orders_map = {row[0]: row[1] for row in all_orders_result}
 
-    # Собираем ID поставщиков и товаров
     supplier_ids = set()
     product_ids = set()
     for row in active_rows:
@@ -82,14 +77,12 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
         supplier_ids.add(row[0])
         product_ids.add(row[2])
 
-    # Имена поставщиков
     suppliers_map = {}
     if supplier_ids:
         supp_res = (await db.execute(select(Supplier).where(Supplier.id.in_(supplier_ids)))).scalars().all()
         for s in supp_res:
             suppliers_map[s.id] = s.name
 
-    # Имена и коды товаров
     products_map = {}
     if product_ids:
         prod_res = (await db.execute(select(Product).where(Product.id.in_(product_ids)))).scalars().all()
@@ -130,15 +123,10 @@ async def list_orders(db: AsyncSession = Depends(get_db)):
 
     active_orders = build_order_items(active_rows)
     all_archive_orders = build_order_items(archive_rows)
-
-    # Архив — только те заявки, которых нет в активных
     active_keys = set(o["order_key"] for o in active_orders)
     archived_orders = [o for o in all_archive_orders if o["order_key"] not in active_keys]
 
-    return {
-        "active": active_orders,
-        "archived": archived_orders,
-    }
+    return {"active": active_orders, "archived": archived_orders}
 
 
 @router.get("/orders/{supplier_id}/items", status_code=200)

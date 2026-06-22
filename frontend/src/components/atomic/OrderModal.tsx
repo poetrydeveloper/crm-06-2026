@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { OrderModalItemsTable } from './OrderModalItemsTable';
 import type { PurchaseItem } from './OrderModalItemsTable';
+import { OrderQuickManualAdd } from './OrderQuickManualAdd';
 
 interface Supplier {
   supplier_id: number;
@@ -28,7 +29,6 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
   const [showSupplierInput, setShowSupplierInput] = useState(false);
   const [supplierError, setSupplierError] = useState<string | null>(null);
 
-  // Умный поиск товаров
   const [productSearch, setProductSearch] = useState('');
   const [foundProducts, setFoundProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
@@ -41,7 +41,7 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
         setSuppliers(Array.isArray(data) ? data : data.suppliers || []);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка загрузки поставщиков:', e);
     }
   };
 
@@ -55,11 +55,10 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
         if (cartList.length > 0) setItems(cartList);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка загрузки корзины:', e);
     }
   }, []);
 
-  // Умный поиск с дебаунсом
   useEffect(() => {
     if (productSearch.length < 2) {
       setFoundProducts([]);
@@ -73,7 +72,7 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
           setFoundProducts(Array.isArray(data) ? data : []);
         }
       } catch (e) {
-        console.error(e);
+        console.error('Ошибка поиска товаров:', e);
       }
     }, 300);
     return () => clearTimeout(delay);
@@ -105,7 +104,7 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
         setSupplierError(data.detail || 'Ошибка при создании');
       }
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка создания поставщика:', e);
       setSupplierError('Ошибка сети');
     }
   };
@@ -141,7 +140,7 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
             product_name: product.name.replace(/_/g, ' '),
             product_code: product.code,
             quantity: 1,
-            estimated_purchase_price: product.recommended_retail_price * 0.6,
+            estimated_purchase_price: parseFloat((product.recommended_retail_price * 0.6).toFixed(2)),
           });
         }
       }
@@ -161,6 +160,18 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
 
   const handleRemoveItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
+  };
+
+  const handleAddManualItem = (productId: number, quantity: number, price: number) => {
+    const existingIdx = items.findIndex((i) => i.product_id === productId);
+    if (existingIdx > -1) {
+      const updated = [...items];
+      updated[existingIdx].quantity += quantity;
+      updated[existingIdx].estimated_purchase_price = price;
+      setItems(updated);
+    } else {
+      setItems([...items, { product_id: productId, quantity, estimated_purchase_price: price }]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -195,7 +206,7 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
         onClose();
       }
     } catch (err) {
-      console.error(err);
+      console.error('Ошибка создания заявки:', err);
     }
   };
 
@@ -258,7 +269,9 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
                   OK
                 </button>
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => {
-                  setShowSupplierInput(false); setNewSupplierName(''); setSupplierError(null);
+                  setShowSupplierInput(false);
+                  setNewSupplierName('');
+                  setSupplierError(null);
                 }}>
                   ✕
                 </button>
@@ -335,6 +348,9 @@ export const OrderModal: React.FC<OrderModalProps> = ({ onClose, onOrderCreated 
 
         {/* Таблица позиций */}
         <OrderModalItemsTable items={items} onItemChange={handleItemChange} onRemoveItem={handleRemoveItem} />
+
+        {/* Быстрое добавление */}
+        <OrderQuickManualAdd onAddItem={handleAddManualItem} />
 
         <div className="d-flex gap-8 mt-3">
           <button type="button" className="btn btn-outline" onClick={onClose}>Отмена</button>
