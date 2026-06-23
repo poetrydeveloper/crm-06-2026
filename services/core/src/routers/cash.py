@@ -26,7 +26,7 @@ async def current_sales(db: AsyncSession = Depends(get_db)):
         select(CashEvent).where(
             CashEvent.cash_day_id == active_day.id,
             CashEvent.type.in_([CashEventType.SALE, CashEventType.RETURN])
-        ).order_by(CashEvent.created_at.desc())
+        ).order_by(CashEvent.created_at.asc())
     )).scalars().all()
 
     sales = []

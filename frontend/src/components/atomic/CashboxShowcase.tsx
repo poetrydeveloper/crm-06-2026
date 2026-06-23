@@ -24,6 +24,8 @@ interface CategoryProduct {
   product_code: string;
   recommended_retail_price: number;
   in_stock: number;
+  in_store_qty?: number;
+  disassembled_qty?: number;
   units: UnitItem[];
 }
 
@@ -34,6 +36,7 @@ interface CashboxShowcaseProps {
   onSelectCategory?: (categoryId: number) => void;
   onDisassembly?: (unitSerial: string, productId: number, mode: 'templated' | 'partial') => void;
   onAbsorb?: (unitIds: number[]) => void;
+  onReassemble?: (parentUnitId: number) => void;
 }
 
 export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
@@ -43,6 +46,7 @@ export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
   onSelectCategory,
   onDisassembly,
   onAbsorb,
+  onReassemble,
 }) => {
   const [detailProductId, setDetailProductId] = useState<number | null>(null);
   const [selectedPrices, setSelectedPrices] = useState<Record<number, number>>({});
@@ -86,11 +90,12 @@ export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
               name: cp.product_name,
               code: cp.product_code,
               recommended_retail_price: selectedPrice,
-              available_qty: filteredUnits.length,
+              available_qty: filteredUnits.filter(u => u.physical_status === 'IN_STORE').length,
             })
           }
           onDisassembly={onDisassembly}
           onAbsorb={onAbsorb}
+          onReassemble={onReassemble}
         />
       );
     }
@@ -103,13 +108,24 @@ export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
             const priceGroups = groupByPrice(cp.units);
             const selectedPrice = getDefaultPrice(cp.product_id, priceGroups);
             const totalStock = cp.in_stock;
+            const inStore = cp.in_store_qty || 0;
+            const disassembled = cp.disassembled_qty || 0;
 
             return (
               <div key={cp.product_id} className="card" style={{ padding: '14px' }}>
                 <div className="d-flex justify-between align-center mb-2">
-                  <span className={`badge ${totalStock > 0 ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '14px', padding: '4px 10px' }}>
-                    {totalStock} шт.
-                  </span>
+                  <div>
+                    <span className={`badge ${totalStock > 0 ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '14px', padding: '4px 10px' }}>
+                      {totalStock} шт.
+                    </span>
+                    {(inStore > 0 || disassembled > 0) && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                        {inStore > 0 && <span style={{ color: 'var(--success)' }}>{inStore} в наличии</span>}
+                        {inStore > 0 && disassembled > 0 && ' • '}
+                        {disassembled > 0 && <span style={{ color: 'var(--warning)', fontWeight: 600 }}>{disassembled} разобран</span>}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600, textTransform: 'capitalize' }}>
                   {cp.product_name.replace(/_/g, ' ')}
@@ -121,6 +137,8 @@ export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
                   <div className="text-muted" style={{ fontSize: '10px', fontWeight: 600, marginBottom: '3px' }}>Закупка:</div>
                   {Array.from(priceGroups.entries()).map(([price, units]) => {
                     const isSelected = price === selectedPrice;
+                    const storeUnits = units.filter(u => u.physical_status === 'IN_STORE').length;
+                    const disUnits = units.filter(u => u.physical_status === 'IN_DISASSEMBLED').length;
                     return (
                       <div
                         key={price}
@@ -135,27 +153,33 @@ export const CashboxShowcase: React.FC<CashboxShowcaseProps> = ({
                         }}
                       >
                         {price.toFixed(2)} ₽ ({units.length} шт.)
+                        {(disUnits > 0) && (
+                          <span style={{ fontSize: '11px', color: 'var(--warning)', marginLeft: '4px' }}>
+                            ({disUnits} разобр.)
+                          </span>
+                        )}
                       </div>
                     );
                   })}
                 </div>
 
                 <div className="d-flex gap-4">
-                  <button
-                    className="btn btn-success btn-sm"
-                    disabled={totalStock === 0}
-                    onClick={() =>
-                      onAddToCart({
-                        id: cp.product_id,
-                        name: cp.product_name,
-                        code: cp.product_code,
-                        recommended_retail_price: selectedPrice,
-                        available_qty: priceGroups.get(selectedPrice)?.length || 0,
-                      })
-                    }
-                  >
-                    В чек
-                  </button>
+                  {inStore > 0 && (
+                    <button
+                      className="btn btn-success btn-sm"
+                      onClick={() =>
+                        onAddToCart({
+                          id: cp.product_id,
+                          name: cp.product_name,
+                          code: cp.product_code,
+                          recommended_retail_price: selectedPrice,
+                          available_qty: inStore,
+                        })
+                      }
+                    >
+                      В чек
+                    </button>
+                  )}
                   {cp.units.length > 0 && (
                     <button className="btn btn-outline btn-sm" onClick={() => setDetailProductId(cp.product_id)}>
                       Подробнее
