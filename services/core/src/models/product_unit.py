@@ -33,6 +33,7 @@ class ProductUnit(Base):
     
     unique_serial_number: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     purchase_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    sold_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     
     logistics_status: Mapped[LogisticsStatus] = mapped_column(Enum(LogisticsStatus), default=LogisticsStatus.CANDIDATE, nullable=False)
     physical_status: Mapped[PhysicalStatus] = mapped_column(Enum(PhysicalStatus), default=PhysicalStatus.EXPECTED, nullable=False)
