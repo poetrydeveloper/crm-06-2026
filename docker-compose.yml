@@ -17,6 +17,7 @@ services:
       POSTGRES_USER: crm_admin
       POSTGRES_PASSWORD: crm_secure_password
       POSTGRES_DB: crm_main_database
+      TZ: "Europe/Moscow"
     volumes:
       - crm_pg_data:/var/lib/postgresql/data
     ports:
@@ -49,6 +50,7 @@ services:
       - ./services/core:/app
     environment:
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+      - TZ=Europe/Moscow
     depends_on:
       db:
         condition: service_healthy
@@ -63,6 +65,7 @@ services:
       - "8001:8001"
     environment:
       - WATCHFILES_FORCE_POLLING=true
+      - TZ=Europe/Moscow
     deploy:
       resources:
         limits:
@@ -80,6 +83,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
       - WATCHFILES_FORCE_POLLING=true
+      - TZ=Europe/Moscow
     depends_on:
       db:
         condition: service_healthy
@@ -161,8 +165,11 @@ services:
       - "8005:8005"
     environment:
       - GATEWAY_URL=http://gateway:80
-      - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
       - LIGHTWEIGHT_MODE=1
+      # 🔥 ИСПРАВЛЕНО: Префикс изменен на postgres://, чтобы прямой драйвер asyncpg не падал в ошибку
+      - DATABASE_URL=postgres://crm_admin:crm_secure_password@db:5432/crm_main_database
+      # 🔥 ИСПРАВЛЕНО: Время прохождения тестов и генерации отчетов совпадет с вашими часами
+      - TZ=Europe/Moscow
     depends_on:
       gateway:
         condition: service_started
