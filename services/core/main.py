@@ -24,12 +24,19 @@ app.add_middleware(
 async def health_check():
     async with httpx.AsyncClient() as client:
         try:
-            await client.post("http://logger:8001/api/v1/log", json={"service": "core", "operation_code": "0000", "level": "INFO", "message": "Healthcheck endpoint hit."}, timeout=2.0)
+            await client.post(
+                "http://logger:8001/api/v1/log", 
+                json={"service": "core", "operation_code": "0000", "level": "INFO", "message": "Healthcheck endpoint hit."}, 
+                timeout=2.0
+            )
         except Exception:
             pass
+            
     try:
+        # 🔥 ИСПРАВЛЕНО: Явное завершение транзакции для предотвращения утечки пула соединений
         async with async_engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+            await conn.commit()
         return {"status": "healthy", "service": "crm_backend_core", "database": "connected"}
     except Exception as e:
         return {"status": "unhealthy", "database": str(e)}

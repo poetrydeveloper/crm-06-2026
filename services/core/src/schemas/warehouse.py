@@ -49,5 +49,7 @@ class SetAbsorptionPayload(BaseModel):
     satellite_unit_ids: List[int]
 
 class RuleCreatePayload(BaseModel):
-    rule_name: str
-    tags: List[str]
+    price_operator: str = Field("ge", description="Оператор сравнения цены: ge (>=) или le (<=)")
+    price_value: float = Field(500.0, description="Граничное значение цены товара")
+    name_contains: Optional[str] = Field(None, description="Фильтр по ключевому слову в названии")
+    stock_threshold: int = Field(2, description="Минимальный порог остатка на полке")

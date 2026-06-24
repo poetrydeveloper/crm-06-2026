@@ -20,6 +20,9 @@ export const Header: React.FC = () => {
     { path: '/admin/returns', label: '🔄 Возвраты' },
     { path: '/admin/returns-log', label: '📋 Журнал' },
     { path: '/warehouse', label: '📦 Склад' },
+    // 🔥 НОВЫЕ ПУНКТЫ ДЛЯ УПРАВЛЕНИЯ АВТОЗАКУПКАМИ И СНАБЖЕНИЕМ
+    { path: '/supply/rules', label: '⚙️ Правила закупки' },
+    { path: '/supply/report', label: '📊 Отчет дефицита' },
   ];
 
   return (

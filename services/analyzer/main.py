@@ -1,10 +1,10 @@
-# services/analyzer/main.py
 import os
 import httpx
 from fastapi import FastAPI, status
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
-from apscheduler.schedulers.background import BackgroundScheduler
+# 🔥 ИСПРАВЛЕНО: Используем специальный асинхронный планировщик вместо фоновых потоков
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from contextlib import asynccontextmanager
 
 # 🔥 ПЛОСКИЙ ИМПОРТ: analytics_modules лежит прямо на корне рядом с main.py
@@ -26,21 +26,13 @@ async def execute_deficit_cron_job():
         except Exception as e:
             print(f"❌ [CRON]: Сбой отправки кэша в ядро: {str(e)}")
 
-def import_and_run_async():
-    """Служебный мост для запуска асинхронной задачи в синхронном потоке APScheduler"""
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(execute_deficit_cron_job())
-    except RuntimeError:
-        asyncio.run(execute_deficit_cron_job())
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """⏳ Настройка и запуск планировщика при старте контейнера"""
-    scheduler = BackgroundScheduler()
-    # 🔥 ИСПРАВЛЕНО: Прямая передача ссылки на функцию
-    scheduler.add_job(import_and_run_async, 'interval', minutes=5, id='deficit_calc_job')
+    # 🔥 ИСПРАВЛЕНО: Теперь планировщик работает внутри единого Event Loop с FastAPI
+    scheduler = AsyncIOScheduler()
+    # Передаем напрямую асинхронную функцию без оберток и потоков
+    scheduler.add_job(execute_deficit_cron_job, 'interval', minutes=5, id='deficit_calc_job')
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -57,6 +49,7 @@ async def get_analytics_summary():
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+            await conn.commit()
         return {
             "status": "success",
             "metrics": {"total_sales": 150000, "active_customers": 42, "conversion_rate": "12.5%"}

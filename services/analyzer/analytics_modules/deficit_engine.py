@@ -1,4 +1,3 @@
-# services/analyzer/analytics_modules/deficit_engine.py
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -7,8 +6,8 @@ class DeficitEngine:
     async def run_calculation(engine: AsyncEngine) -> list[dict]:
         """
         🔥 СИНХРОНИЗИРОВАННЫЙ СУБД-АВТОЗАКАЗ:
-        Поддерживает Enterprise-операторы ge/le и возвращает контрактные поля
-        в строгом соответствии с буфером склада ядра розничной сети.
+        Поддерживает Enterprise-операторы ge/le и возвращает контрактные поля.
+        Оптимизирован для предотвращения InterfaceError (another operation is in progress).
         """
         pre_orders = []
         
@@ -28,7 +27,6 @@ class DeficitEngine:
                     } for r in rules_res.fetchall()
                 ]
 
-                # Если директор ещё не создал ни одного правила, используем базовую матрицу-фоллбэк
                 if not active_rules:
                     active_rules = [
                         {"id": 1, "price_operator": "ge", "price_value": 500.0, "name_contains": None, "stock_threshold": 2}
@@ -38,35 +36,42 @@ class DeficitEngine:
                 exc_res = await conn.execute(text("SELECT product_id FROM purchase_exceptions;"))
                 exceptions = set(r[0] for r in exc_res.fetchall())
 
-                # 📊 3. СКАНИРОВАНИЕ НОМЕНКЛАТУРЫ И ФИЗИЧЕСКИХ ОСТАТКОВ
+                # 📊 3. СКАНИРОВАНИЕ ОСТАТКОВ ОДНИМ ЗАПРОСОМ (Вместо сотен запросов в цикле!)
+                # Группируем по product_id и считаем COUNT для статуса IN_STORE
+                stock_res = await conn.execute(text(
+                    "SELECT product_id, COUNT(id) FROM product_units WHERE physical_status = 'IN_STORE' GROUP BY product_id;"
+                ))
+                # Превращаем в быстрый словарь: {product_id: count}
+                stock_map = {r[0]: r[1] for r in stock_res.fetchall()}
+
+                # 📊 4. СКАНИРОВАНИЕ НОМЕНКЛАТУРЫ
                 prod_res = await conn.execute(text("SELECT id, name, code, recommended_retail_price FROM products;"))
                 products = prod_res.fetchall()
 
+                # Закрываем транзакцию/соединение, так как данные уже у нас в памяти,
+                # и дальнейшие расчеты не заблокируют СУБД.
+                await conn.commit() 
+
+                # 🧮 5. ОБРАБОТКА ДАННЫХ В ПАМЯТИ
                 for p in products:
                     p_id, p_name, p_code, p_price = p[0], p[1], p[2], float(p[3] or 0)
                     
-                    # Если товар помечен галочкой "Больше не находить" — баним его в выдаче
                     if p_id in exceptions:
                         continue
 
-                    # Считаем точный остаток физических юнитов IN_STORE на витрине
-                    count_res = await conn.execute(text(
-                        "SELECT COUNT(id) FROM product_units WHERE product_id = :p_id AND physical_status = 'IN_STORE';"
-                    ), {"p_id": p_id})
-                    current_stock = count_res.scalar() or 0
+                    # Получаем остаток из нашего готового словаря (если товара нет в базе остатков, значит 0)
+                    current_stock = stock_map.get(p_id, 0)
 
                     name_lower = (p_name or "").lower()
                     is_deficit = False
                     matched_rule_id = 0
                     stock_limit = 0
 
-                    # Прогоняем товар через матрицу условий снабжения
                     for rule in active_rules:
                         price_match = False
                         rule_price = float(rule["price_value"] or 0)
                         op = rule["price_operator"]
                         
-                        # 🔥 ИСПРАВЛЕНО: Поддержка как символьных, так и строковых операторов ge/le из ядра
                         if op in [">", "ge"] and p_price >= rule_price:
                             price_match = True
                         elif op in ["<", "le"] and p_price <= rule_price:
@@ -87,7 +92,6 @@ class DeficitEngine:
                                 break
 
                     if is_deficit:
-                        # 🔥 ИСПРАВЛЕНО: Вычисляем реальный объем закупки и приводим поля к контракту ядра склада
                         deficit_qty = int(stock_limit) - int(current_stock)
                         if deficit_qty <= 0:
                             deficit_qty = 2

@@ -1,5 +1,11 @@
-# docker compose up -d      легкий запуск без хромиума
-# docker compose --profile full up -d     полный
+# 🔹 ЛЕГКИЙ ЗАПУСК (Разработка без тестов и Chromium):
+# docker compose up -d
+
+# 🧪 ЗАПУСК ОРКЕСТРАТОРА ТЕСТОВ И QA (Полный режим):
+# docker compose --profile full up -d
+
+# 🛑 ОСТАНОВКА ВСЕХ СЕРВИСОВ (Включая профильные):
+# docker compose --profile full down
 version: '3.8'
 
 services:
@@ -21,8 +27,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # 🚀 ТЯЖЕЛЫЙ БРАУЗЕР: Выделен в профиль "full". 
-  # В легком режиме он НЕ скачивается и НЕ тратит ОЗУ.
+  # 🚀 ТЯЖЕЛЫЙ БРАУЗЕР: Выделен в профиль "full"
   browserless:
     image: browserless/chrome:latest
     container_name: crm_browserless
@@ -56,11 +61,13 @@ services:
       - ./services/logger:/app
     ports:
       - "8001:8001"
+    environment:
+      - WATCHFILES_FORCE_POLLING=true
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '0.3'
+          memory: 128M
 
   analyzer:
     build: ./services/analyzer
@@ -68,16 +75,19 @@ services:
     restart: always
     volumes:
       - ./services/analyzer:/app
+    ports:
+      - "8002:8002"
     environment:
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
+      - WATCHFILES_FORCE_POLLING=true
     depends_on:
       db:
         condition: service_healthy
     deploy:
       resources:
         limits:
-          cpus: '0.2'
-          memory: 100M
+          cpus: '0.4'
+          memory: 192M
 
   frontend:
     build: ./frontend
@@ -105,14 +115,11 @@ services:
     depends_on:
       - frontend
       - backend
-      - analyzer
 
-  # 🔥 БЭКАП: Регламент Живых Пазлов СУБД (Каждые 3 часа)
   backup:
     image: prodrigestivill/postgres-backup-local:latest
     container_name: crm_backup_service
     restart: always
-    user: "postgres:postgres"
     volumes:
       - ./infra/backups:/backups
     environment:
@@ -135,14 +142,19 @@ services:
     restart: always
     ports:
       - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=db
     depends_on:
       db:
         condition: service_healthy
 
+  # 🧪 ОРКЕСТРАТОР ТЕСТОВ: Теперь тоже в профиле "full" и не мешает при обычной разработке
   crm_qa_orchestrator:
     build: ./services/qa_orchestrator
     container_name: crm_qa_orchestrator
     restart: always
+    profiles:
+      - full
     volumes:
       - ./services/qa_orchestrator:/app
     ports:
@@ -150,7 +162,6 @@ services:
     environment:
       - GATEWAY_URL=http://gateway:80
       - DATABASE_URL=postgresql+asyncpg://crm_admin:crm_secure_password@db:5432/crm_main_database
-      # 🔥 ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА: "1" — легкий (без Chromium), "0" — честные клики
       - LIGHTWEIGHT_MODE=1
     depends_on:
       gateway:
