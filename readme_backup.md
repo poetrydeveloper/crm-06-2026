@@ -76,3 +76,10 @@ chmod 777 ./infra/backups
 bash
 docker compose restart backup
 docker compose logs backup --tail 10
+
+
+
+
+
+docker exec -it crm_backup_service //backup.sh
+бекапит сразу
