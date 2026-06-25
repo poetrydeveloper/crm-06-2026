@@ -337,8 +337,16 @@ export const Cashbox: React.FC = () => {
         </div>
       )}
 
+      {/* 🔥 ИСПРАВЛЕНО: Передаем точные пропсы, которые ожидает DisassemblyModal */}
       {disassemblyUnit && (
-        <DisassemblyModal unit={disassemblyUnit} onClose={() => setDisassemblyUnit(null)} />
+        <DisassemblyModal
+          unitSerial={disassemblyUnit.unique_serial_number}
+          productId={disassemblyUnit.product_id}
+          onClose={() => setDisassemblyUnit(null)}
+          onSuccess={() => {
+            if (selectedCategoryId) loadCategoryUnits(selectedCategoryId);
+          }}
+        />
       )}
       {showReturnModal && (
         <ReturnModal onClose={() => setShowReturnModal(false)} onSuccess={loadSaleHistory} />
