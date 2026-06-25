@@ -37,6 +37,7 @@ docker compose ps
 * `crm_postgres_db` (PostgreSQL 16)
 
 ---
+1
 
 ## 🔍 Как проверить работоспособность (Тест-кейсы)
 
