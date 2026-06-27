@@ -116,6 +116,32 @@ export const Catalog: React.FC = () => {
     }
   };
 
+  // 🔥 LAST: переход в категорию последнего созданного товара
+  const handleLastCategory = async () => {
+    try {
+      const r = await fetch('/api/v1/logs/search?operation_code=0003');
+      if (r.ok) {
+        const logs = await r.json();
+        if (logs.length > 0) {
+          const lastLog = logs[logs.length - 1];
+          const match = lastLog.message.match(/категория: (\d+)/);
+          if (match) {
+            const categoryId = parseInt(match[1]);
+            setSelectedCategoryId(categoryId);
+            setSearchQuery('');
+            // Скроллим к категории в дереве
+            setTimeout(() => {
+              const el = document.querySelector(`[data-category-id="${categoryId}"]`);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 200);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('LAST error:', e);
+    }
+  };
+
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -141,7 +167,10 @@ export const Catalog: React.FC = () => {
           brand_id: parseInt(newProdBrandId),
           category_id: selectedCategoryId,
           search_aliases: newProdAliases
-            ? newProdAliases.split(',').map((s) => s.trim()).filter(Boolean)
+            ? newProdAliases
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
             : [],
         }),
       });
@@ -178,7 +207,11 @@ export const Catalog: React.FC = () => {
       await fetch(`/api/v1/catalog/products/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), recommended_retail_price: parseFloat(price), category_id: prod.category_id }),
+        body: JSON.stringify({
+          name: name.trim(),
+          recommended_retail_price: parseFloat(price),
+          category_id: prod.category_id,
+        }),
       });
       loadProducts();
     } catch (e) {
@@ -197,7 +230,7 @@ export const Catalog: React.FC = () => {
   };
 
   const filteredProducts = products.filter((prod) =>
-    selectedCategoryId ? prod.category_id === selectedCategoryId : true
+    selectedCategoryId ? prod.category_id === selectedCategoryId : true,
   );
 
   return (
@@ -217,6 +250,13 @@ export const Catalog: React.FC = () => {
             <span className="text-muted" style={{ fontWeight: 500 }}>
               📂 {getCategoryPath(selectedCategoryId)}
             </span>
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={handleLastCategory}
+              title="Перейти в категорию последнего созданного товара"
+            >
+              LAST
+            </button>
             <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
               {showForm ? 'Скрыть' : '+ Добавить товар'}
             </button>
@@ -272,7 +312,9 @@ export const Catalog: React.FC = () => {
                   >
                     <option value="">-- Бренд --</option>
                     {brands.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
                     ))}
                   </select>
                   <button
@@ -298,12 +340,35 @@ export const Catalog: React.FC = () => {
               </div>
             </div>
 
-            {formError && <div className="alert alert-danger" style={{ marginBottom: '8px', padding: '8px 12px' }}>{formError}</div>}
-            {formSuccess && <div className="alert alert-success" style={{ marginBottom: '8px', padding: '8px 12px' }}>{formSuccess}</div>}
+            {formError && (
+              <div
+                className="alert alert-danger"
+                style={{ marginBottom: '8px', padding: '8px 12px' }}
+              >
+                {formError}
+              </div>
+            )}
+            {formSuccess && (
+              <div
+                className="alert alert-success"
+                style={{ marginBottom: '8px', padding: '8px 12px' }}
+              >
+                {formSuccess}
+              </div>
+            )}
 
             <div className="d-flex gap-8">
-              <button type="submit" className="btn btn-success btn-sm">Сохранить</button>
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => { setShowForm(false); setFormError(null); }}>
+              <button type="submit" className="btn btn-success btn-sm">
+                Сохранить
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  setShowForm(false);
+                  setFormError(null);
+                }}
+              >
                 Отмена
               </button>
             </div>

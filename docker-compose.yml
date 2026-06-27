@@ -113,7 +113,7 @@ services:
     container_name: crm_nginx_gateway
     restart: always
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf  # убрали :ro
     ports:
       - "80:80"
     depends_on:
