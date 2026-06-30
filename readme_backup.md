@@ -82,4 +82,4 @@ docker compose logs backup --tail 10
 
 
 docker exec -it crm_backup_service //backup.sh
-бекапит сразу
+бекапит сраз
